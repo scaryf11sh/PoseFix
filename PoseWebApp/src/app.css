@@ -1,0 +1,209 @@
+@import url('https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300..900;1,300..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,100..900;1,100..900&display=swap');
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+    --font-rubik: "Rubik";
+    --font-psans: "Public Sans";
+
+    /* Primary - Graphite */
+    /* Secondary - carbon*/
+    /* accent - Electric green*/
+    /* background - soft linen*/
+    /* surface - alabaster*/
+    /* dark primary - poder blue*/
+    /* dark secondary - rich cerulean */
+    /* dark accent - frozen water */
+    /* dark background - ink black */
+    /* dark surface - twilight indigo*/
+    /* accent2 - Tuscan */
+    /* accent3 - shamrock*/
+    /* red - red ribbon*/
+    /* purple - port gore*
+
+    /* Primary - Graphite */
+    --color-graphite-50: oklch(0.234 0.002 145.3);
+    --color-graphite-100: oklch(0.326 0.004 145.32);
+    --color-graphite-200: oklch(0.853 0.012 145.32);
+    --color-graphite-300: oklch(0.776 0.011 145.32);
+    --color-graphite-400: oklch(0.697 0.009 145.32);
+    --color-graphite-500: oklch(0.629 0.008 145.31);
+    --color-graphite-600: oklch(0.551 0.008 145.32);
+    --color-graphite-700: oklch(0.475 0.006 145.32);
+    --color-graphite-800: oklch(0.405 0.006 145.33);
+    --color-graphite-900: oklch(0.326 0.004 145.32);
+    --color-graphite-950: oklch(0.234 0.002 145.3);
+
+    /* Secondary - Carbon */
+    --color-carbon-50: oklch(0.26 0.002 106.35);
+    --color-carbon-100: oklch(0.301 0.002 106.3);
+    --color-carbon-200: oklch(0.844 0.006 106.33);
+    --color-carbon-300: oklch(0.766 0.004 106.27);
+    --color-carbon-400: oklch(0.689 0.004 106.32);
+    --color-carbon-500: oklch(0.612 0.004 106.36);
+    --color-carbon-600: oklch(0.534 0.003 106.29);
+    --color-carbon-700: oklch(0.456 0.003 106.35);
+    --color-carbon-800: oklch(0.379 0.002 106.2);
+    --color-carbon-900: oklch(0.301 0.002 106.3);
+    --color-carbon-950: oklch(0.26 0.002 106.35);
+
+    /* Accent - Tuscan */
+    --color-Tuscan-50: oklch(0.965 0.025 78.91);
+    --color-Tuscan-100: oklch(0.932 0.057 83.47);
+    --color-Tuscan-200: oklch(0.858 0.137 88.41);
+    --color-Tuscan-300: oklch(0.769 0.123 88.23);
+    --color-Tuscan-400: oklch(0.682 0.108 88.69);
+    --color-Tuscan-500: oklch(0.587 0.093 88.5);
+    --color-Tuscan-600: oklch(0.501 0.08 88.92);
+    --color-Tuscan-700: oklch(0.406 0.064 87.58);
+    --color-Tuscan-800: oklch(0.319 0.05 88.62);
+    --color-Tuscan-900: oklch(0.225 0.036 91.19);
+    --color-Tuscan-950: oklch(0.177 0.028 87.88);
+
+    /* Accent - Electric Green */
+    --color-electric-green-50: oklch(97.47% 0.035 153.26);
+    --color-electric-green-100: oklch(95.33% 0.070 152.37);
+    --color-electric-green-200: oklch(91.49% 0.137 151.10);
+    --color-electric-green-300: oklch(88.56% 0.196 149.04);
+    --color-electric-green-400: oklch(86.63% 0.243 146.81);
+    --color-electric-green-500: oklch(85.60% 0.272 144.58);
+    --color-electric-green-600: oklch(72.38% 0.229 144.74);
+    --color-electric-green-700: oklch(58.53% 0.183 145.02);
+    --color-electric-green-800: oklch(43.80% 0.134 145.60);
+    --color-electric-green-900: oklch(27.67% 0.081 147.06);
+    --color-electric-green-950: oklch(22.41% 0.063 148.30);
+
+    --color-shamrock-50: #F5FDF7;
+    --color-shamrock-100: #C2F5D1;
+    --color-shamrock-200: #8FECAB;
+    --color-shamrock-300: #5DE385;
+    --color-shamrock-400: #31D162;
+    --color-shamrock-500: #2BB755;
+    --color-shamrock-600: #259C49;
+    --color-shamrock-700: #1F823D;
+    --color-shamrock-800: #186730;
+    --color-shamrock-900: #124D24;
+    --color-shamrock-950: #0C3318;
+
+    /* Background - Soft Linen */
+    --color-soft-linen-50: oklch(0.977 0.003 144.94);
+    --color-soft-linen-100: oklch(0.93 0.012 145.32);
+    --color-soft-linen-200: oklch(0.843 0.019 145.31);
+    --color-soft-linen-300: oklch(0.757 0.016 145.32);
+    --color-soft-linen-400: oklch(0.671 0.015 145.32);
+    --color-soft-linen-500: oklch(0.576 0.012 145.32);
+    --color-soft-linen-600: oklch(0.49 0.01 145.32);
+    --color-soft-linen-700: oklch(0.404 0.008 145.32);
+    --color-soft-linen-800: oklch(0.317 0.007 145.32);
+    --color-soft-linen-900: oklch(0.224 0.005 145.32);
+    --color-soft-linen-950: oklch(0.176 0.003 145.33);
+
+    /* Surface - Alabaster */
+    --color-alabaster-50: oklch(0.974 0.003 173.87);
+    --color-alabaster-100: oklch(0.939 0.01 164.66);
+    --color-alabaster-200: oklch(0.881 0.015 164.56);
+    --color-alabaster-300: oklch(0.791 0.014 166.95);
+    --color-alabaster-400: oklch(0.697 0.013 161.78);
+    --color-alabaster-500: oklch(0.602 0.011 164.53);
+    --color-alabaster-600: oklch(0.508 0.009 164.56);
+    --color-alabaster-700: oklch(0.412 0.006 164.6);
+    --color-alabaster-800: oklch(0.326 0.004 174.03);
+    --color-alabaster-900: oklch(0.233 0.004 164.6);
+    --color-alabaster-950: oklch(0.176 0.003 145.33);
+
+    /* MODO OSCURO - Powder Blue (textos principales) */
+    --color-poder-blue-50: oklch(95.93% 0.007 247.90);
+    --color-poder-blue-100: oklch(91.89% 0.013 251.57);
+    --color-poder-blue-200: oklch(83.60% 0.029 251.49);
+    --color-poder-blue-300: oklch(75.41% 0.043 249.52);
+    --color-poder-blue-400: oklch(66.84% 0.060 250.33);
+    --color-poder-blue-500: oklch(58.16% 0.077 251.06);
+    --color-poder-blue-600: oklch(49.67% 0.064 250.73);
+    --color-poder-blue-700: oklch(40.82% 0.050 250.16);
+    --color-poder-blue-800: oklch(31.17% 0.037 252.09);
+    --color-poder-blue-900: oklch(21.03% 0.019 252.09);
+    --color-poder-blue-950: oklch(17.84% 0.014 243.80);
+
+    /* Rich Cerulean (textos secundarios) */
+    --color-rich-cerulean-50: oklch(96.08% 0.008 236.56);
+    --color-rich-cerulean-100: oklch(92.20% 0.016 239.12);
+    --color-rich-cerulean-200: oklch(84.30% 0.033 239.44);
+    --color-rich-cerulean-300: oklch(76.29% 0.052 240.22);
+    --color-rich-cerulean-400: oklch(68.24% 0.069 240.81);
+    --color-rich-cerulean-500: oklch(60.42% 0.086 240.78);
+    --color-rich-cerulean-600: oklch(51.31% 0.072 241.85);
+    --color-rich-cerulean-700: oklch(42.02% 0.058 241.80);
+    --color-rich-cerulean-800: oklch(32.20% 0.040 241.16);
+    --color-rich-cerulean-900: oklch(21.56% 0.022 240.65);
+    --color-rich-cerulean-950: oklch(18.17% 0.017 241.29);
+
+    /* Frozen Water (acento cyan) */
+    --color-frozen-water-50: oklch(97.57% 0.021 178.38);
+    --color-frozen-water-100: oklch(95.03% 0.040 179.06);
+    --color-frozen-water-200: oklch(90.49% 0.077 178.52);
+    --color-frozen-water-300: oklch(86.38% 0.110 176.40);
+    --color-frozen-water-400: oklch(82.86% 0.134 174.48);
+    --color-frozen-water-500: oklch(80.14% 0.152 170.99);
+    --color-frozen-water-600: oklch(67.69% 0.126 171.77);
+    --color-frozen-water-700: oklch(54.87% 0.102 171.73);
+    --color-frozen-water-800: oklch(41.29% 0.074 172.71);
+    --color-frozen-water-900: oklch(26.44% 0.045 173.14);
+    --color-frozen-water-950: oklch(21.69% 0.034 175.30);
+
+    /* Ink Black (fondos) */
+    --color-ink-black-50: oklch(95.95% 0.008 253.85);
+    --color-ink-black-100: oklch(92% 0.016 245.10);
+    --color-ink-black-200: oklch(83.72% 0.032 248.21);
+    --color-ink-black-300: oklch(75.28% 0.050 249.44);
+    --color-ink-black-400: oklch(66.95% 0.069 248.89);
+    --color-ink-black-500: oklch(58.34% 0.087 250.02);
+    --color-ink-black-600: oklch(49.87% 0.073 249.48);
+    --color-ink-black-700: oklch(40.77% 0.058 250.26);
+    --color-ink-black-800: oklch(31.41% 0.040 249.21);
+    --color-ink-black-900: oklch(20.97% 0.024 251.59);
+    --color-ink-black-950: oklch(17.81% 0.016 244.78);
+
+    /* Twilight Indigo (superficies/cards) */
+    --color-twilight-indigo-50: oklch(95.71% 0.010 261.79);
+    --color-twilight-indigo-100: oklch(91.32% 0.021 259.19);
+    --color-twilight-indigo-200: oklch(82.75% 0.042 257.51);
+    --color-twilight-indigo-300: oklch(73.83% 0.066 258.08);
+    --color-twilight-indigo-400: oklch(64.83% 0.091 258.29);
+    --color-twilight-indigo-500: oklch(55.87% 0.117 258.43);
+    --color-twilight-indigo-600: oklch(47.75% 0.097 258.29);
+    --color-twilight-indigo-700: oklch(39.27% 0.076 258.05);
+    --color-twilight-indigo-800: oklch(30.31% 0.053 257.56);
+    --color-twilight-indigo-900: oklch(20.35% 0.031 258.99);
+    --color-twilight-indigo-950: oklch(17.23% 0.023 260.39);
+
+    --color-red-ribbon-50: #FFF3F7;
+    --color-red-ribbon-100: #FDB6CD;
+    --color-red-ribbon-200: #FC78A3;
+    --color-red-ribbon-300: #FA3B79;
+    --color-red-ribbon-400: #ED0A53;
+    --color-red-ribbon-500: #CF0848;
+    --color-red-ribbon-600: #B1073E;
+    --color-red-ribbon-700: #930633;
+    --color-red-ribbon-800: #750529;
+    --color-red-ribbon-900: #57041E;
+    --color-red-ribbon-950: #390214;
+
+    --color-port-gore-50: #F4F4F5;
+    --color-port-gore-100: #BBBAC5;
+    --color-port-gore-200: #838194;
+    --color-port-gore-300: #4A4864;
+    --color-port-gore-400: #1C193A;
+    --color-port-gore-500: #181633;
+    --color-port-gore-600: #15122B;
+    --color-port-gore-700: #110F24;
+    --color-port-gore-800: #0E0C1D;
+    --color-port-gore-900: #0A0915;
+    --color-port-gore-950: #07060E;
+
+}
+
+* {
+    box-sizing: border-box;
+}
