@@ -1,80 +1,144 @@
 <script>
-    import {onMount} from 'svelte';
-    import {page} from "$app/state";
-    import {LayoutDashboard, Video, Dumbbell, FileDown, Settings2} from '@lucide/svelte';
+    import { onMount } from "svelte";
+    import { page } from "$app/state";
+    import {
+        LayoutDashboard,
+        Video,
+        Dumbbell,
+        FileDown,
+        Settings2,
+        ClipboardClock,
+    } from "@lucide/svelte";
     let darkMode = $state(false);
 
     $effect(() => {
         // Resaltar el enlace activo
         const currentPath = page.url.pathname;
-        document.querySelectorAll('a').forEach(link => {
-            if (link.getAttribute('href') === currentPath) {
-                link.classList.add('bg-alabaster-800', 'dark:bg-twilight-indigo-600');
-                link.classList.remove('hover:bg-alabaster-800', 'dark:hover:bg-twilight-indigo-600');
+        document.querySelectorAll("a").forEach((link) => {
+            if (link.getAttribute("href") === currentPath) {
+                link.classList.add(
+                    "outline",
+                    "dark:outline-frozen-lake-800",
+                    "outline-frozen-lake-400/60",
+                    "bg-frozen-lake-400/15",
+                    "dark:text-frozen-lake-200",
+                    "text-deep-twilight-900",
+                );
+                link.classList.remove(
+                    "hover:bg-gray-200/50",
+                    "dark:hover:bg-gray-800/50",
+                    "dark:text-frozen-lake-200/50",
+                    "text-deep-twilight-900/50",
+                );
             } else {
-                link.classList.remove('bg-alabaster-800', 'dark:bg-twilight-indigo-600');
-                link.classList.add('hover:bg-alabaster-800', 'dark:hover:bg-twilight-indigo-600');
+                link.classList.remove(
+                    "outline",
+                    "dark:outline-frozen-lake-800",
+                    "outline-frozen-lake-400/60",
+                    "bg-frozen-lake-400/15",
+                    "dark:text-frozen-lake-200",
+                    "text-deep-twilight-900",
+                );
+                link.classList.add(
+                    "hover:bg-gray-200/50",
+                    "dark:hover:bg-gray-800/50",
+                    "dark:text-frozen-lake-200/50",
+                    "text-deep-twilight-900/50",
+                );
             }
         });
     });
 </script>
 
-<aside class="h-screen p-6">
-    <div class="h-full flex flex-col justify-between">
+<aside
+    class="h-full hidden md:flex fixed left-0 top-0 p-4 w-64 dark:bg-slate-950/75 border-r dark:backdrop-blur-3xl dark:border-sky-400/10 shadow-2xl"
+>
+    <div class="h-full flex flex-col justify-between w-full">
         <!-- Main Navigation -->
-        <div class="rounded-full h-auto bg-twilight-indigo-50 dark:bg-rich-cerulean-900 shadow-2xl shadow-port-gore-200 dark:shadow-port-gore-400 dark:border dark:border-twilight-indigo-950 px-3 py-7 text-electric-green-600 font-medium flex flex-col justify-center items-center gap-4">
-            <a
+        <div>
+            <div class="flex flex-row items-center gap-x-1 mb-8">
+                <div>
+                    <img src="/icon.png" alt="Logo" class="w-12 h-12" />
+                </div>
+                <div>
+                    <h2 class="text-lg font-bold text-deep-twilight-900 dark:text-frozen-lake-400">PoseFix</h2>
+                    <h3 class="text-xs uppercase text-deep-twilight-900/75 dark:text-frozen-lake-400/75">Ergonomic Planner</h3>
+                </div>
+            </div>
+            <div class="flex flex-col gap-2">
+                <a
                     aria-label="Dashboard"
-                    class="rounded-full p-3 hover:bg-alabaster-800 dark:hover:bg-twilight-indigo-600 ease-in-out transition cursor-pointer transform "
                     href="/"
                     id="nav-dashboard"
-            >
-                <LayoutDashboard />
-            </a>
+                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200"
+                >
+                    <LayoutDashboard />
+                    <label class="flex-1">Dashboard</label>
+                </a>
 
-            <a
+                <a
                     aria-label="Camera"
-                    class="rounded-full p-3 hover:bg-alabaster-800 dark:hover:bg-twilight-indigo-600 ease-in-out transition cursor-pointer transform"
                     href="/camera"
                     id="nav-camera"
-            >
-                <Video />
-            </a>
+                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200"
+                >
+                    <Video />
+                    <label class="flex-1">Monitor</label>
+                </a>
 
-            <a
+                <a
                     aria-label="Exercises"
-                    class="rounded-full p-3 hover:bg-alabaster-800 dark:hover:bg-twilight-indigo-600 ease-in-out transition cursor-pointer transform"
                     href="/exercises"
                     id="nav-exercises"
-            >
-                <Dumbbell />
-            </a>
+                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200"
+                >
+                    <Dumbbell />
+                    <label class="flex-1">Exercises</label>
+                </a>
 
-            <a
+                <a
+                    aria-label="Progress"
+                    href="/progress"
+                    id="nav-progress"
+                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200"
+                >
+                    <ClipboardClock />
+                    <label class="flex-1">Progress</label>
+                </a>
+
+                <a
                     aria-label="Export Data"
-                    class="rounded-full p-3 hover:bg-alabaster-800 dark:hover:bg-twilight-indigo-600 ease-in-out transition cursor-pointer transform"
                     href="/export"
                     id="nav-export"
-            >
-                <FileDown />
-            </a>
+                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200"
+                >
+                    <FileDown />
+                    <label class="flex-1">Export</label>
+                </a>
+            </div>
         </div>
 
         <!-- Settings -->
-        <div class="rounded-full h-auto bg-twilight-indigo-50 dark:bg-rich-cerulean-900 shadow-2xl shadow-port-gore-200 dark:shadow-port-gore-400 dark:border dark:border-twilight-indigo-950 px-3 py-7 text-electric-green-600 font-medium flex flex-col justify-center items-center gap-4">
-            <a
-                    aria-label="Settings"
-                    class="rounded-full p-3 hover:bg-alabaster-800 dark:hover:bg-twilight-indigo-600 ease-in-out transition cursor-pointer transform"
-                    href="/settings"
-                    id="nav-settings"
-            >
+        <div
+            class="flex flex-col *:flex *:flex-row gap-2 *:gap-2 *:rounded-full *:py-3 *:px-5 *:duration-200 *:items-center *:hover:translate-x-3 *:transition-all"
+        >
+            <a aria-label="Settings" href="/settings" id="nav-settings">
                 <Settings2 />
+                <label>Settings</label>
             </a>
-            <div id="user-icon" class="rounded-full outline outline-carbon-950 p-[1px]">
-                <div class="rounded-full bg-Tuscan-400 ">
-                    <img src="/profile-img.jpg" alt="User Profile Picture" class="rounded-full size-10 object-fill">
+            <a aria-label="Account" href="/account" id="nav-account">
+                <div class="p-[1.5px] rounded-full bg-jade-green-400 shrink-0">
+                    <div class="p-[1px] rounded-full dark:bg-slate-950/75">
+                        <div class="rounded-full size-7 overflow-hidden">
+                            <img
+                                src="/profile-img.jpg"
+                                alt="User Profile Picture"
+                            />
+                        </div>
+                    </div>
                 </div>
-            </div>
+                <label>Account</label>
+            </a>
         </div>
     </div>
 </aside>
