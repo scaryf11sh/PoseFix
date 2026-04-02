@@ -4,7 +4,13 @@
 			"path": "PoseFixSensor"
 		},
 		{
-			"path": "."
+			"path": "PoseWebApp"
+		},
+		{
+			"path": "PoseScanner"
+		},
+		{
+			"path": "PoseBackend"
 		}
 	],
     "settings": {}
