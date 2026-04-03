@@ -51,7 +51,7 @@
 </script>
 
 <aside
-    class="h-full hidden md:flex fixed left-0 top-0 p-4 w-64 dark:bg-slate-950/75 border-r dark:backdrop-blur-3xl dark:border-sky-400/10 shadow-2xl"
+    class="h-screen hidden md:flex p-4 w-64 dark:bg-slate-950/75 border-r dark:backdrop-blur-3xl dark:border-sky-400/10 shadow-2xl"
 >
     <div class="h-full flex flex-col justify-between w-full">
         <!-- Main Navigation -->
@@ -70,7 +70,7 @@
                     aria-label="Dashboard"
                     href="/"
                     id="nav-dashboard"
-                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200"
+                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200 *:cursor-pointer"
                 >
                     <LayoutDashboard />
                     <label class="flex-1">Dashboard</label>
@@ -80,7 +80,7 @@
                     aria-label="Camera"
                     href="/camera"
                     id="nav-camera"
-                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200"
+                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200 *:cursor-pointer"
                 >
                     <Video />
                     <label class="flex-1">Monitor</label>
@@ -90,7 +90,7 @@
                     aria-label="Exercises"
                     href="/exercises"
                     id="nav-exercises"
-                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200"
+                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200 *:cursor-pointer"
                 >
                     <Dumbbell />
                     <label class="flex-1">Exercises</label>
@@ -100,7 +100,7 @@
                     aria-label="Progress"
                     href="/progress"
                     id="nav-progress"
-                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200"
+                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200 *:cursor-pointer"
                 >
                     <ClipboardClock />
                     <label class="flex-1">Progress</label>
@@ -110,7 +110,7 @@
                     aria-label="Export Data"
                     href="/export"
                     id="nav-export"
-                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200"
+                    class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200 *:cursor-pointer"
                 >
                     <FileDown />
                     <label class="flex-1">Export</label>
@@ -122,11 +122,11 @@
         <div
             class="flex flex-col *:flex *:flex-row gap-2 *:gap-2 *:rounded-full *:py-3 *:px-5 *:duration-200 *:items-center *:hover:translate-x-3 *:transition-all"
         >
-            <a aria-label="Settings" href="/settings" id="nav-settings">
+            <a aria-label="Settings" href="/settings" id="nav-settings" class="*:cursor-pointer">
                 <Settings2 />
                 <label>Settings</label>
             </a>
-            <a aria-label="Account" href="/account" id="nav-account">
+            <a aria-label="Account" href="/account" id="nav-account" class="*:cursor-pointer">
                 <div class="p-[1.5px] rounded-full bg-jade-green-400 shrink-0">
                     <div class="p-[1px] rounded-full dark:bg-slate-950/75">
                         <div class="rounded-full size-7 overflow-hidden">
