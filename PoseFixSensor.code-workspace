@@ -13,5 +13,9 @@
 			"path": "PoseBackend"
 		}
 	],
-    "settings": {}
+    "settings": {
+        "i18n-ally.localesPaths": [
+            "../PoseWebApp/src/lib/i18n"
+        ]
+    }
 }
