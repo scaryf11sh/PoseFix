@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300..900;1,300..900&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,100..900;1,100..900&display=swap');
 @import "tailwindcss";
+@source "../node_modules/layerchart";
 
 @variant dark (&:where(.dark, .dark *));
 
@@ -329,4 +330,17 @@
 
 * {
     box-sizing: border-box;
+}
+
+.lc-root-container {
+/* Default marks color when not using explicit color or color scale */
+--color-primary: var(--color-blue-500);
+
+/* Progressively darker shades representing surfaces (backgrounds). */
+--color-surface-100: var(--color-white);
+--color-surface-200: var(--color-gray-100);
+--color-surface-300: var(--color-gray-300);
+
+/* Content (text) color */
+--color-surface-content: var(--color-gray-900);
 }
