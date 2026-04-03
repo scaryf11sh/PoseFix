@@ -1,196 +1,251 @@
 <script lang="ts">
-    import { Dumbbell, Stretching, Arm, Eye } from '@lucide/svelte';
+    import ExerciseCard from "$lib/components/ui/Cards/ExerciseCard.svelte";
 
     type Exercise = {
         id: number;
         title: string;
         duration: string;
-        difficulty: 'easy' | 'medium' | 'hard';
-        category: 'neck' | 'shoulders' | 'back' | 'eyes';
-        description: string;
-        steps: string[];
+        tags: string[];
+        image: string;
+        area: string[];
+        durationVal: number;
+        recommended?: boolean;
+        recommendedLabel?: string;
     };
 
     const exercises: Exercise[] = [
         {
             id: 1,
-            title: "Rotación de cuello",
-            duration: "2 min",
-            difficulty: "easy",
-            category: "neck",
-            description: "Moviliza suavemente las cervicales",
-            steps: [
-                "Inclina la cabeza hacia adelante",
-                "Rota lentamente hacia la derecha",
-                "Vuelve al centro y repite hacia la izquierda",
-                "Haz 5 repeticiones por lado"
-            ]
+            title: "Neck Tilt",
+            duration: "1 min",
+            durationVal: 1,
+            tags: ["Neck", "Desk-Friendly"],
+            area: ["Neck"],
+            image: "https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&h=300&fit=crop",
         },
         {
             id: 2,
-            title: "Elevación de hombros",
-            duration: "3 min",
-            difficulty: "easy",
-            category: "shoulders",
-            description: "Libera tensión en trapecios",
-            steps: [
-                "Levanta los hombros hacia las orejas",
-                "Mantén 3 segundos",
-                "Baja lentamente",
-                "Repite 10 veces"
-            ]
+            title: "Shoulder Roll",
+            duration: "1 min",
+            durationVal: 1,
+            tags: ["Shoulders", "Relief"],
+            area: ["Shoulders"],
+            image: "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&h=300&fit=crop",
         },
         {
             id: 3,
-            title: "Estiramiento de espalda",
-            duration: "5 min",
-            difficulty: "medium",
-            category: "back",
-            description: "Estira la columna torácica",
-            steps: [
-                "Siéntate con la espalda recta",
-                "Entrelaza las manos detrás de la cabeza",
-                "Arquea suavemente hacia atrás",
-                "Mantén 10 segundos y repite"
-            ]
+            title: "Cat-Cow Flow",
+            duration: "3 min",
+            durationVal: 3,
+            tags: ["Back", "Mobility"],
+            area: ["Back"],
+            image: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&h=300&fit=crop",
         },
         {
             id: 4,
-            title: "Descanso visual 20-20-20",
-            duration: "1 min",
-            difficulty: "easy",
-            category: "eyes",
-            description: "Reduce fatiga visual",
-            steps: [
-                "Cada 20 minutos de trabajo",
-                "Mira un objeto a 20 pies (6 metros)",
-                "Mantén la vista 20 segundos",
-                "Parpadea varias veces"
-            ]
-        }
+            title: "Doorway Opener",
+            duration: "3 min",
+            durationVal: 3,
+            tags: ["Chest", "Posture Fix"],
+            area: ["Full Body"],
+            image: "https://images.unsplash.com/photo-1534367507873-d2d7e24c797f?w=400&h=300&fit=crop",
+        },
+        {
+            id: 5,
+            title: "Thoracic Bridge",
+            duration: "5 min",
+            durationVal: 5,
+            tags: ["Full Body", "Advanced"],
+            area: ["Full Body", "Back"],
+            image: "https://images.unsplash.com/photo-1545389336-cf090694435e?w=400&h=300&fit=crop",
+        },
+        {
+            id: 6,
+            title: "Child's Pose",
+            duration: "2 min",
+            durationVal: 2,
+            tags: ["Back", "Relief"],
+            area: ["Back", "Full Body"],
+            image: "https://images.unsplash.com/photo-1588286840104-8957b019727f?w=400&h=300&fit=crop",
+            recommended: true,
+            recommendedLabel: "Spine Realignment (3m)",
+        },
     ];
 
-    let selectedExercise: Exercise | null = null;
-    let isDoingExercise = $state(false);
-    let exerciseProgress = $state(0);
+    const areas = ["All", "Neck", "Back", "Shoulders", "Full Body"];
+    const durations = ["1m", "3m", "5m+"];
 
-    function startExercise(exercise: Exercise) {
-        selectedExercise = exercise;
-        isDoingExercise = true;
-        exerciseProgress = 0;
-    }
+    let searchQuery = $state("");
+    let selectedArea = $state("All");
+    let selectedDuration = $state<string | null>(null);
+    let visibleCount = $state(6);
 
-    function completeExercise() {
-        isDoingExercise = false;
-        selectedExercise = null;
-        exerciseProgress = 100;
-    }
+    let filtered = $derived(
+        exercises.filter((e) => {
+            const matchSearch = e.title
+                .toLowerCase()
+                .includes(searchQuery.toLowerCase());
+            const matchArea =
+                selectedArea === "All" || e.area.includes(selectedArea);
+            const matchDuration =
+                !selectedDuration ||
+                (selectedDuration === "1m" && e.durationVal <= 1) ||
+                (selectedDuration === "3m" &&
+                    e.durationVal <= 3 &&
+                    e.durationVal > 1) ||
+                (selectedDuration === "5m+" && e.durationVal >= 5);
+            return matchSearch && matchArea && matchDuration;
+        }),
+    );
 
-    function getDifficultyColor(difficulty: string) {
-        switch (difficulty) {
-            case 'easy': return 'bg-electric-green-200 dark:bg-electric-green-900 text-electric-green-800 dark:text-electric-green-300';
-            case 'medium': return 'bg-Tuscan-200 dark:bg-Tuscan-900 text-Tuscan-800 dark:text-Tuscan-300';
-            case 'hard': return 'bg-red-ribbon-200 dark:bg-red-ribbon-900 text-red-ribbon-800 dark:text-red-ribbon-300';
-            default: return 'bg-carbon-200';
-        }
-    }
+    let visible = $derived(filtered.slice(0, visibleCount));
+    let hasMore = $derived(filtered.length > visibleCount);
 </script>
 
-<div class="h-full w-full p-8 overflow-auto">
-    <div class="max-w-4xl mx-auto">
-        <h1 class="text-3xl font-medium text-graphite-900 dark:text-powder-blue-100 mb-2">
-            Ejercicios
-        </h1>
-        <p class="text-electric-green-600 dark:text-frozen-water-400 mb-6">
-            Rutinas para mejorar tu postura y reducir fatiga
-        </p>
+<div
+    class="flex-1 p-6 overflow-y-auto bg-bright-snow-50 dark:bg-prussian-blue-900"
+>
+    <!-- Header -->
+    <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 dark:text-white">
+                Exercise Library
+            </h1>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Quick routines to improve your posture
+            </p>
+        </div>
 
-        {#if isDoingExercise && selectedExercise}
-            <!-- Vista de ejercicio en progreso -->
-            <div class="rounded-2xl bg-twilight-indigo-50 dark:bg-rich-cerulean-900 p-8 shadow-2xl shadow-port-gore-200 dark:shadow-port-gore-400 border border-twilight-indigo-950">
-                <div class="flex items-center justify-between mb-6">
-                    <h2 class="text-2xl font-medium text-graphite-900 dark:text-powder-blue-100">
-                        {selectedExercise.title}
-                    </h2>
-                    <span class="px-3 py-1 rounded-full text-sm {getDifficultyColor(selectedExercise.difficulty)}">
-                        {selectedExercise.difficulty === 'easy' ? 'Fácil' : selectedExercise.difficulty === 'medium' ? 'Medio' : 'Difícil'}
-                    </span>
-                </div>
-
-                <div class="mb-6">
-                    <div class="flex justify-between text-sm mb-2">
-                        <span class="text-carbon-600 dark:text-powder-blue-400">Progreso</span>
-                        <span class="text-graphite-900 dark:text-powder-blue-100">{exerciseProgress}%</span>
-                    </div>
-                    <div class="w-full bg-carbon-300 dark:bg-twilight-indigo-700 rounded-full h-3">
-                        <div class="bg-electric-green-600 h-3 rounded-full transition-all duration-300" style="width: {exerciseProgress}%"></div>
-                    </div>
-                </div>
-
-                <div class="space-y-4 mb-6">
-                    <h3 class="font-medium text-carbon-700 dark:text-powder-blue-300">Pasos:</h3>
-                    {#each selectedExercise.steps as step, i}
-                        <div class="flex gap-3">
-                            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-electric-green-200 dark:bg-electric-green-900 text-electric-green-800 dark:text-electric-green-300 flex items-center justify-center text-sm font-medium">
-                                {i + 1}
-                            </span>
-                            <p class="text-carbon-700 dark:text-powder-blue-300">{step}</p>
-                        </div>
-                    {/each}
-                </div>
-
-                <div class="flex gap-3">
-                    <button
-                        onclick={() => exerciseProgress = Math.min(100, exerciseProgress + 25)}
-                        class="flex-1 py-3 rounded-xl bg-electric-green-600 text-twilight-indigo-50 font-medium hover:bg-electric-green-500 transition"
-                    >
-                        Marcar paso completado
-                    </button>
-                    <button
-                        onclick={completeExercise}
-                        class="px-6 py-3 rounded-xl bg-carbon-400 text-powder-blue-100 font-medium hover:bg-carbon-500 transition"
-                    >
-                        Finalizar
-                    </button>
-                </div>
+        <!-- Search -->
+        <div class="flex items-center gap-2">
+            <div class="relative">
+                <svg
+                    class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                >
+                    <circle cx="11" cy="11" r="8" /><line
+                        x1="21"
+                        y1="21"
+                        x2="16.65"
+                        y2="16.65"
+                    />
+                </svg>
+                <input
+                    type="text"
+                    placeholder="Search exercises..."
+                    bind:value={searchQuery}
+                    class="pl-9 pr-4 py-2 rounded-xl text-sm w-56
+                        bg-white dark:bg-slate-800
+                        border border-slate-200 dark:border-slate-700
+                        text-slate-800 dark:text-white
+                        placeholder:text-slate-400
+                        focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400
+                        transition-all"
+                />
             </div>
-        {:else}
-            <!-- Lista de ejercicios -->
-            <div class="grid gap-4 md:grid-cols-2">
-                {#each exercises as exercise}
-                    <div class="rounded-2xl bg-twilight-indigo-50 dark:bg-rich-cerulean-900 p-6 shadow-2xl shadow-port-gore-200 dark:shadow-port-gore-400 border border-twilight-indigo-950">
-                        <div class="flex items-start justify-between mb-3">
-                            <div>
-                                <h3 class="text-lg font-medium text-graphite-900 dark:text-powder-blue-100">
-                                    {exercise.title}
-                                </h3>
-                                <p class="text-sm text-carbon-600 dark:text-powder-blue-400">
-                                    {exercise.description}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="flex items-center gap-2 mb-4">
-                            <span class="px-2 py-1 rounded-lg text-xs bg-alabaster-200 dark:bg-twilight-indigo-800 text-carbon-600 dark:text-powder-blue-400">
-                                {exercise.duration}
-                            </span>
-                            <span class="px-2 py-1 rounded-lg text-xs {getDifficultyColor(exercise.difficulty)}">
-                                {exercise.difficulty === 'easy' ? 'Fácil' : exercise.difficulty === 'medium' ? 'Medio' : 'Difícil'}
-                            </span>
-                            <span class="px-2 py-1 rounded-lg text-xs bg-frozen-water-200 dark:bg-frozen-water-900 text-frozen-water-800 dark:text-frozen-water-300">
-                                {exercise.category === 'neck' ? 'Cuello' : exercise.category === 'shoulders' ? 'Hombros' : exercise.category === 'back' ? 'Espalda' : 'Ojos'}
-                            </span>
-                        </div>
-
-                        <button
-                            onclick={() => startExercise(exercise)}
-                            class="w-full py-2 rounded-xl bg-electric-green-600 text-twilight-indigo-50 font-medium hover:bg-electric-green-500 transition"
-                        >
-                            Comenzar ejercicio
-                        </button>
-                    </div>
-                {/each}
-            </div>
-        {/if}
+            <button
+                class="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-sky-400 transition-colors"
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                >
+                    <line x1="4" y1="6" x2="20" y2="6" /><line
+                        x1="8"
+                        y1="12"
+                        x2="16"
+                        y2="12"
+                    /><line x1="11" y1="18" x2="13" y2="18" />
+                </svg>
+            </button>
+        </div>
     </div>
+
+    <!-- Filters -->
+    <div class="flex flex-wrap items-center gap-2 mb-6">
+        <span
+            class="text-xs font-bold uppercase tracking-widest text-slate-400 mr-1"
+            >Target Area</span
+        >
+        {#each areas as area}
+            <button
+                onclick={() => (selectedArea = area)}
+                class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-200
+                    {selectedArea === area
+                    ? 'bg-sky-400 text-white shadow-lg shadow-sky-400/30'
+                    : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-sky-300'}"
+            >
+                {area}
+            </button>
+        {/each}
+
+        <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-2"></div>
+
+        <span
+            class="text-xs font-bold uppercase tracking-widest text-slate-400 mr-1"
+            >Duration</span
+        >
+        {#each durations as d}
+            <button
+                onclick={() =>
+                    (selectedDuration = selectedDuration === d ? null : d)}
+                class="px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-200
+                    {selectedDuration === d
+                    ? 'bg-sky-400 text-white shadow-lg shadow-sky-400/30'
+                    : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-sky-300'}"
+            >
+                {d}
+            </button>
+        {/each}
+    </div>
+
+    <!-- Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        {#each visible as exercise (exercise.id)}
+            <ExerciseCard
+                title={exercise.title}
+                duration={exercise.duration}
+                tags={exercise.tags}
+                image={exercise.image}
+                recommended={exercise.recommended}
+                recommendedLabel={exercise.recommendedLabel}
+                onStart={() => alert(`Starting: ${exercise.title}`)}
+            />
+        {/each}
+    </div>
+
+    <!-- Load more -->
+    {#if hasMore}
+        <div class="flex justify-center pb-4">
+            <button
+                onclick={() => (visibleCount += 6)}
+                class="flex items-center gap-2 px-6 py-3 rounded-2xl
+                    bg-white dark:bg-slate-800
+                    border border-slate-200 dark:border-slate-700
+                    text-slate-700 dark:text-slate-200 text-sm font-medium
+                    hover:border-sky-300 hover:text-sky-500
+                    transition-all duration-200 shadow-sm"
+            >
+                Load more exercises
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                >
+                    <polyline points="6 9 12 15 18 9" />
+                </svg>
+            </button>
+        </div>
+    {/if}
 </div>
