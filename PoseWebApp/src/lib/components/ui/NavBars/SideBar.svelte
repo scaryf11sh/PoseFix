@@ -51,7 +51,7 @@
 </script>
 
 <aside
-    class="h-screen hidden md:flex p-4 w-64 dark:bg-slate-950/75 border-r dark:backdrop-blur-3xl dark:border-sky-400/10 shadow-2xl"
+    class="h-screen hidden md:flex p-4 w-64 dark:bg-slate-950/75 border-r backdrop-blur-3xl border-sky-400/10 shadow-2xl z-40"
 >
     <div class="h-full flex flex-col justify-between w-full">
         <!-- Main Navigation -->
@@ -61,8 +61,16 @@
                     <img src="/icon.png" alt="Logo" class="w-12 h-12" />
                 </div>
                 <div>
-                    <h2 class="text-lg font-bold text-deep-twilight-900 dark:text-frozen-lake-400">PoseFix</h2>
-                    <h3 class="text-xs uppercase text-deep-twilight-900/75 dark:text-frozen-lake-400/75">Ergonomic Planner</h3>
+                    <h2
+                        class="text-lg font-bold text-deep-twilight-900 dark:text-frozen-lake-400"
+                    >
+                        PoseFix
+                    </h2>
+                    <h3
+                        class="text-xs uppercase text-deep-twilight-900/75 dark:text-frozen-lake-400/75"
+                    >
+                        Ergonomic Planner
+                    </h3>
                 </div>
             </div>
             <div class="flex flex-col gap-2">
@@ -122,11 +130,21 @@
         <div
             class="flex flex-col *:flex *:flex-row gap-2 *:gap-2 *:rounded-full *:py-3 *:px-5 *:duration-200 *:items-center *:hover:translate-x-3 *:transition-all"
         >
-            <a aria-label="Settings" href="/settings" id="nav-settings" class="*:cursor-pointer">
+            <a
+                aria-label="Settings"
+                href="/settings"
+                id="nav-settings"
+                class="*:cursor-pointer"
+            >
                 <Settings2 />
                 <label>Settings</label>
             </a>
-            <a aria-label="Account" href="/account" id="nav-account" class="*:cursor-pointer">
+            <a
+                aria-label="Account"
+                href="/account"
+                id="nav-account"
+                class="*:cursor-pointer"
+            >
                 <div class="p-[1.5px] rounded-full bg-jade-green-400 shrink-0">
                     <div class="p-[1px] rounded-full dark:bg-slate-950/75">
                         <div class="rounded-full size-7 overflow-hidden">

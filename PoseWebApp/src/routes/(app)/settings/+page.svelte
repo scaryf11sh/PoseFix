@@ -1,5 +1,6 @@
 <script lang="ts">
     import { theme, type ThemeMode } from "$lib/stores/theme";
+    import { goto } from "$app/navigation";
     // --- Cameras ---
     type Camera = {
         id: string;
@@ -631,6 +632,51 @@
                     transition-all active:scale-95"
                 >
                     Configure AI Neural Link
+                </button>
+            </div>
+            <!-- Reset Setup -->
+            <div
+                class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm px-5 py-4 flex items-center justify-between gap-4 flex-wrap"
+            >
+                <div class="flex items-center gap-3">
+                    <div
+                        class="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-500"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="w-5 h-5"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                        >
+                            <path
+                                d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"
+                            />
+                            <path d="M3 3v5h5" />
+                        </svg>
+                    </div>
+                    <div>
+                        <p
+                            class="text-sm font-semibold text-slate-800 dark:text-white"
+                        >
+                            Restart Setup Wizard
+                        </p>
+                        <p class="text-xs text-slate-400">
+                            Re-run the initial configuration flow
+                        </p>
+                    </div>
+                </div>
+                <button
+                    onclick={() => goto("/onboarding")}
+                    class="px-4 py-2 rounded-xl text-sm font-medium
+            bg-slate-100 dark:bg-slate-800
+            border border-slate-200 dark:border-slate-700
+            text-slate-700 dark:text-slate-200
+            hover:border-sky-400 hover:text-sky-400
+            transition-all active:scale-95"
+                >
+                    Launch Setup
                 </button>
             </div>
         </div>
