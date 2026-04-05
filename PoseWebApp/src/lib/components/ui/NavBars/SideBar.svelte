@@ -1,6 +1,7 @@
 <script>
     import { onMount } from "svelte";
     import { page } from "$app/state";
+    import { goto } from "$app/navigation";
     import {
         LayoutDashboard,
         Video,
@@ -8,7 +9,12 @@
         FileDown,
         Settings2,
         ClipboardClock,
+        LogOut,
     } from "@lucide/svelte";
+
+    function handleLogout() {
+        goto("/");
+    }
     let darkMode = $state(false);
 
     $effect(() => {
@@ -157,6 +163,15 @@
                 </div>
                 <label>Account</label>
             </a>
+            <button
+                aria-label="Logout"
+                id="nav-logout"
+                onclick={handleLogout}
+                class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200 cursor-pointer text-red-500 dark:text-red-400 hover:bg-red-500/10"
+            >
+                <LogOut />
+                <label class="cursor-pointer">Logout</label>
+            </button>
         </div>
     </div>
 </aside>
