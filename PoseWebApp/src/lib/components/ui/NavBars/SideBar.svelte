@@ -170,7 +170,7 @@
                 class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full hover:translate-x-3 transition-all duration-200 cursor-pointer text-red-500 dark:text-red-400 hover:bg-red-500/10"
             >
                 <LogOut />
-                <label class="cursor-pointer">Logout</label>
+                <span>Logout</span>
             </button>
         </div>
     </div>
