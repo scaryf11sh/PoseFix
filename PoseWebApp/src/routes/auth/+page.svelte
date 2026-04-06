@@ -86,11 +86,11 @@
 >
     <!-- Background glow -->
     <div
-        class="absolute top-0 left-1/4 w-[500px] h-[500px] rounded-full
+        class="absolute top-0 left-1/4 w-125 h-125 rounded-full
         bg-sky-400/5 dark:bg-sky-400/8 blur-[140px] pointer-events-none"
     ></div>
     <div
-        class="absolute bottom-0 right-1/4 w-[400px] h-[400px] rounded-full
+        class="absolute bottom-0 right-1/4 w-100 h-100 rounded-full
         bg-blue-600/5 dark:bg-blue-600/8 blur-[120px] pointer-events-none"
     ></div>
 
@@ -145,7 +145,7 @@
             overflow-hidden"
         >
             <div
-                class="h-0.5 bg-gradient-to-r from-sky-400 via-blue-500 to-sky-400"
+                class="h-0.5 bg-linear-to-r from-sky-400 via-blue-500 to-sky-400"
             ></div>
 
             <div class="p-8">

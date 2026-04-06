@@ -88,7 +88,9 @@
             "devops": "DevOps Engineer",
             "student": "Student",
             "other": "Other"
-        }
+        },
+        "username": "Username",
+        "username_hint": "This is how others will see you. No spaces."
     },
     "dashboard": {
         "title": "Daily Overview",

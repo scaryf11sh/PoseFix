@@ -88,7 +88,9 @@
             "devops": "Ingeniero DevOps",
             "student": "Estudiante",
             "other": "Otro"
-        }
+        },
+        "username": "Nombre de Usuario",
+        "username_hint": "Así te verán los demás. Sin espacios."
     },
     "dashboard": {
         "title": "Resumen Diario",

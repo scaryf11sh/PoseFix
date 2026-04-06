@@ -3,6 +3,14 @@
 
 <head>
     <meta charset="utf-8" />
+    <script>
+        (function () {
+            const mode = localStorage.getItem("themeMode");
+            const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+            const isDark = mode === "dark" || ((!mode || mode === "system") && prefersDark);
+            if (isDark) document.documentElement.classList.add("dark");
+        })();
+    </script>
     <meta content="width=device-width, initial-scale=1" name="viewport" />
     %sveltekit.head%
 </head>

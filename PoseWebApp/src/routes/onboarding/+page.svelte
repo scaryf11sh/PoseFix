@@ -52,7 +52,7 @@
         },
         {
             id: 3,
-            name: "Posefix Band 2.0",
+            name: "Glacier Band 2.0",
             sub: "BT Low Energy",
             status: "Connected" as SensorStatus,
             icon: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z",
@@ -96,7 +96,9 @@
     // --- Validation ---
     let canNext = $derived(
         step === 1
-            ? fullName.trim() !== "" && email.trim() !== "" && profession !== ""
+            ? fullName.trim() !== "" &&
+                  username.trim() !== "" &&
+                  profession !== ""
             : step === 2
               ? true
               : true,
@@ -104,7 +106,7 @@
 
     function next() {
         if (step < totalSteps) step++;
-        else goto("/");
+        else goto("/dashboard");
     }
 
     function back() {
@@ -150,7 +152,7 @@
             </svg>
         </div>
         <span class="text-base font-bold text-slate-800 dark:text-white"
-            >PoseFix</span
+            >Glacier</span
         >
     </div>
 
@@ -212,7 +214,7 @@
                     <h1
                         class="text-2xl font-bold text-slate-900 dark:text-white mb-2"
                     >
-                        Welcome to PoseFix
+                        Welcome to Glacier
                     </h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
                         Let's set up your profile to optimize your workspace
@@ -220,11 +222,73 @@
                     </p>
                 </div>
 
+                <!-- Info pre-llenada -->
+                {#if email}
+                    <div
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 mb-4"
+                    >
+                        <div
+                            class="w-8 h-8 rounded-full bg-sky-400 flex items-center justify-center text-white text-xs font-bold shrink-0"
+                        >
+                            {fullName
+                                .split(" ")
+                                .map((n) => n[0])
+                                .join("")
+                                .toUpperCase()
+                                .slice(0, 2) || "?"}
+                        </div>
+                        <div>
+                            <p
+                                class="text-sm font-semibold text-slate-800 dark:text-white"
+                            >
+                                {fullName}
+                            </p>
+                            <p class="text-xs text-slate-400">{email}</p>
+                        </div>
+                    </div>
+                {/if}
+
                 <div class="space-y-4">
+                    <!-- Username -->
                     <div>
                         <label
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                            >Full Name</label
+                            >{$_("onboarding.username")}</label
+                        >
+                        <div class="relative">
+                            <svg
+                                class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            >
+                                <path
+                                    d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
+                                /><circle cx="12" cy="7" r="4" />
+                            </svg>
+                            <input
+                                type="text"
+                                bind:value={username}
+                                placeholder="e.g. johndoe92"
+                                class="w-full pl-10 pr-4 py-3 rounded-xl text-sm
+                                    bg-slate-50 dark:bg-slate-800
+                                    border border-slate-200 dark:border-slate-700
+                                    text-slate-800 dark:text-white placeholder:text-slate-400
+                                    focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                            />
+                        </div>
+                        <p class="text-[10px] text-slate-400 mt-1">
+                            {$_("onboarding.username_hint")}
+                        </p>
+                    </div>
+
+                    <!-- Full name -->
+                    <div>
+                        <label
+                            class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
+                            >{$_("auth.full_name")}</label
                         >
                         <div class="relative">
                             <svg
@@ -255,38 +319,7 @@
                     <div>
                         <label
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                            >Email Address</label
-                        >
-                        <div class="relative">
-                            <svg
-                                class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <path
-                                    d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
-                                /><polyline points="22,6 12,13 2,6" />
-                            </svg>
-                            <input
-                                type="email"
-                                bind:value={email}
-                                placeholder="john@posefix.app"
-                                class="w-full pl-10 pr-4 py-3 rounded-xl text-sm
-                                    bg-slate-50 dark:bg-slate-800
-                                    border border-slate-200 dark:border-slate-700
-                                    text-slate-800 dark:text-white placeholder:text-slate-400
-                                    focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label
-                            class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                            >Profession</label
+                            >{$_("onboarding.profession")}</label
                         >
                         <div class="relative">
                             <svg
@@ -346,7 +379,7 @@
                         Connect Your Hardware
                     </h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
-                        PoseFix syncs with your devices to monitor posture in
+                        Glacier syncs with your devices to monitor posture in
                         real-time.
                     </p>
                 </div>
@@ -481,7 +514,7 @@
                         Your Preferences
                     </h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
-                        Customize how PoseFix works for you.
+                        Customize how Glacier works for you.
                     </p>
                 </div>
 

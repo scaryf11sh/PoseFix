@@ -3,59 +3,56 @@
     import { goto } from "$app/navigation";
     import { _ } from "svelte-i18n";
     import { open } from "@tauri-apps/plugin-dialog";
-    import { copyFile } from "@tauri-apps/plugin-fs";
+    import { copyFile, readFile } from "@tauri-apps/plugin-fs";
     import { appDataDir, join } from "@tauri-apps/api/path";
-    import { convertFileSrc } from "@tauri-apps/api/core";
     import {
-        getUser,
         updateUser,
         updateAvatar,
         getSessionStats,
         getExerciseCount,
-        type User,
         type SessionStats,
     } from "$lib/db";
     import { getCurrentUser } from "$lib/auth";
+    import { userStore } from "$lib/stores/user";
+    import {
+        Camera,
+        Shield,
+        Bell,
+        ChevronRight,
+        Star,
+        Save,
+        AlertTriangle,
+    } from "@lucide/svelte";
 
-    // --- State ---
-    let user = $state<User | null>(null);
     let stats = $state<SessionStats | null>(null);
     let exerciseCount = $state(0);
     let loading = $state(true);
     let editing = $state(false);
     let saving = $state(false);
     let saved = $state(false);
-    let avatarUrl = $state<string | null>(null);
 
-    // Form fields
     let name = $state("");
     let email = $state("");
     let profession = $state("");
     let age = $state("");
 
+    let avatarUrl = $derived($userStore.avatarUrl);
+    let user = $derived($userStore.user);
+
     onMount(async () => {
-        // --- Session guard ---
         const current = await getCurrentUser();
         if (!current) {
             goto("/auth");
             return;
         }
-
-        loading = true;
-        try {
-            user = current;
-            name = user.username;
-            email = user.email;
-            profession = user.profession ?? "";
-            age = user.age?.toString() ?? "";
-            stats = await getSessionStats(user.id);
-            exerciseCount = await getExerciseCount(user.id);
-            if (user.avatar_path) {
-                avatarUrl = convertFileSrc(user.avatar_path);
-            }
-        } finally {
-            loading = false;
-        }
+        if (!$userStore.user) userStore.setUser(current);
+        name = current.username;
+        email = current.email;
+        profession = current.profession ?? "";
+        age = current.age?.toString() ?? "";
+        stats = await getSessionStats(current.id);
+        exerciseCount = await getExerciseCount(current.id);
+        loading = false;
     });
 
     async function saveChanges() {
@@ -68,13 +65,13 @@
                 profession: profession || undefined,
                 age: age ? parseInt(age) : undefined,
             });
-            user = {
+            userStore.setUser({
                 ...user,
                 username: name,
                 email,
                 profession,
                 age: age ? parseInt(age) : undefined,
-            };
+            });
             editing = false;
             saved = true;
             setTimeout(() => (saved = false), 2500);
@@ -91,12 +88,23 @@
             ],
         });
         if (!selected || typeof selected !== "string") return;
+
+        // Copia al directorio de datos de la app
         const dir = await appDataDir();
         const dest = await join(dir, "avatar.png");
         await copyFile(selected, dest);
+
+        // Guarda la ruta en la DB
         await updateAvatar(user.id, dest);
-        avatarUrl = convertFileSrc(dest) + "?t=" + Date.now();
-        user = { ...user, avatar_path: dest };
+
+        // Lee el archivo como bytes y lo convierte a base64 para mostrar inmediatamente
+        // (evita problemas de caché con convertFileSrc en Tauri)
+        const bytes = await readFile(dest);
+        const base64 = btoa(String.fromCharCode(...bytes));
+        const dataUrl = `data:image/png;base64,${base64}`;
+
+        // Actualiza el store con el dataUrl — sidebar y account se sincronizan
+        userStore.setAvatarDataUrl(dataUrl, dest);
     }
 
     function cancelEdit() {
@@ -117,6 +125,23 @@
             .slice(0, 2),
     );
     let postureScore = $derived(Math.round(stats?.avg_score ?? 0));
+
+    const securityItems = [
+        {
+            icon: Shield,
+            label: "account.password",
+            sub: "account.password_sub",
+            href: "/account/password",
+            accent: "",
+        },
+        {
+            icon: Bell,
+            label: "account.notifications",
+            sub: "account.notif_sub",
+            href: "/account/notifications",
+            accent: "",
+        },
+    ];
 </script>
 
 <div
@@ -139,20 +164,7 @@
         <div
             class="flex flex-col items-center justify-center h-64 gap-3 text-slate-400"
         >
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-12 h-12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-            >
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle
-                    cx="12"
-                    cy="7"
-                    r="4"
-                />
-            </svg>
+            <AlertTriangle class="w-12 h-12" />
             <p class="text-sm">{$_("account.no_user")}</p>
         </div>
     {:else}
@@ -178,21 +190,9 @@
                     <button
                         onclick={pickAvatar}
                         aria-label="Change avatar"
-                        class="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-sky-400 hover:bg-sky-500 flex items-center justify-center shadow-lg transition-colors"
+                        class="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-sky-400 hover:bg-sky-500 flex items-center justify-center shadow-lg transition-colors cursor-pointer"
                     >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="w-4 h-4 text-white"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        >
-                            <path
-                                d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
-                            />
-                            <circle cx="12" cy="13" r="4" />
-                        </svg>
+                        <Camera class="w-4 h-4 text-white" />
                     </button>
                 </div>
 
@@ -242,16 +242,7 @@
                 <div
                     class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-3.5 h-3.5 text-sky-400"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                    >
-                        <path
-                            d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"
-                        />
-                    </svg>
+                    <Star class="w-3.5 h-3.5 text-sky-400" />
                     <span class="text-xs font-bold text-sky-500"
                         >{$_("account.premium")}</span
                     >
@@ -267,18 +258,7 @@
                         <div
                             class="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center text-sky-500"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="w-4 h-4"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <path
-                                    d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
-                                /><circle cx="12" cy="7" r="4" />
-                            </svg>
+                            <Shield class="w-4 h-4" />
                         </div>
                         <h2
                             class="font-semibold text-slate-800 dark:text-white"
@@ -289,37 +269,77 @@
                     <button
                         onclick={() =>
                             editing ? cancelEdit() : (editing = true)}
-                        class="text-xs font-bold text-sky-400 hover:text-sky-500 transition-colors"
+                        class="text-xs font-bold text-sky-400 hover:text-sky-500 transition-colors cursor-pointer"
                     >
                         {editing ? $_("common.cancel_edit") : $_("common.edit")}
                     </button>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4 mb-6">
-                    {#each [{ label: $_("account.full_name"), value: name, setter: (v: string) => (name = v), type: "text", placeholder: "John Doe" }, { label: $_("account.email"), value: email, setter: (v: string) => (email = v), type: "email", placeholder: "john@example.com" }, { label: $_("account.profession"), value: profession, setter: (v: string) => (profession = v), type: "text", placeholder: "Engineer" }, { label: $_("account.age"), value: age, setter: (v: string) => (age = v), type: "number", placeholder: "25" }] as field}
-                        <div>
-                            <label
-                                class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                                >{field.label}</label
-                            >
-                            <input
-                                type={field.type}
-                                value={field.value}
-                                oninput={(e) =>
-                                    field.setter(
-                                        (e.target as HTMLInputElement).value,
-                                    )}
-                                placeholder={field.placeholder}
-                                disabled={!editing}
-                                class="w-full px-3 py-2.5 rounded-xl text-sm text-slate-800 dark:text-white
-                                    bg-slate-50 dark:bg-slate-800
-                                    border border-slate-200 dark:border-slate-700
-                                    placeholder:text-slate-400
-                                    disabled:opacity-60 disabled:cursor-not-allowed
-                                    focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
-                            />
-                        </div>
-                    {/each}
+                    <div>
+                        <label
+                            class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
+                            >{$_("account.full_name")}</label
+                        >
+                        <input
+                            type="text"
+                            bind:value={name}
+                            placeholder="John Doe"
+                            disabled={!editing}
+                            class="w-full px-3 py-2.5 rounded-xl text-sm text-slate-800 dark:text-white
+                                bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700
+                                placeholder:text-slate-400 disabled:opacity-60 disabled:cursor-not-allowed
+                                focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                        />
+                    </div>
+                    <div>
+                        <label
+                            class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
+                            >{$_("account.email")}</label
+                        >
+                        <input
+                            type="email"
+                            bind:value={email}
+                            placeholder="john@example.com"
+                            disabled={!editing}
+                            class="w-full px-3 py-2.5 rounded-xl text-sm text-slate-800 dark:text-white
+                                bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700
+                                placeholder:text-slate-400 disabled:opacity-60 disabled:cursor-not-allowed
+                                focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                        />
+                    </div>
+                    <div>
+                        <label
+                            class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
+                            >{$_("account.profession")}</label
+                        >
+                        <input
+                            type="text"
+                            bind:value={profession}
+                            placeholder="Engineer"
+                            disabled={!editing}
+                            class="w-full px-3 py-2.5 rounded-xl text-sm text-slate-800 dark:text-white
+                                bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700
+                                placeholder:text-slate-400 disabled:opacity-60 disabled:cursor-not-allowed
+                                focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                        />
+                    </div>
+                    <div>
+                        <label
+                            class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
+                            >{$_("account.age")}</label
+                        >
+                        <input
+                            type="number"
+                            bind:value={age}
+                            placeholder="25"
+                            disabled={!editing}
+                            class="w-full px-3 py-2.5 rounded-xl text-sm text-slate-800 dark:text-white
+                                bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700
+                                placeholder:text-slate-400 disabled:opacity-60 disabled:cursor-not-allowed
+                                focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                        />
+                    </div>
                 </div>
 
                 <div class="flex justify-end gap-3 items-center">
@@ -327,38 +347,25 @@
                         <span
                             class="flex items-center gap-1.5 text-sm text-green-500 font-medium"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="w-4 h-4"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2.5"
-                            >
-                                <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                            {$_("common.saved")}
+                            <Save class="w-4 h-4" />{$_("common.saved")}
                         </span>
                     {/if}
                     <button
                         onclick={cancelEdit}
-                        class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                     >
                         {$_("common.cancel")}
                     </button>
                     <button
                         onclick={saveChanges}
                         disabled={!editing || saving}
-                        class="px-5 py-2 rounded-xl text-sm font-bold
-                            bg-slate-900 dark:bg-sky-500 text-white
-                            hover:bg-slate-700 dark:hover:bg-sky-400
-                            disabled:opacity-40 disabled:cursor-not-allowed
-                            transition-all shadow-sm active:scale-95 flex items-center gap-2"
+                        class="px-5 py-2 rounded-xl text-sm font-bold bg-slate-900 dark:bg-sky-500 text-white
+                            hover:bg-slate-700 dark:hover:bg-sky-400 disabled:opacity-40 disabled:cursor-not-allowed
+                            transition-all shadow-sm active:scale-95 flex items-center gap-2 cursor-pointer"
                     >
                         {#if saving}
                             <svg
                                 class="w-4 h-4 animate-spin"
-                                xmlns="http://www.w3.org/2000/svg"
                                 fill="none"
                                 viewBox="0 0 24 24"
                             >
@@ -376,6 +383,8 @@
                                     d="M4 12a8 8 0 018-8v8z"
                                 />
                             </svg>
+                        {:else}
+                            <Save class="w-4 h-4" />
                         {/if}
                         {$_("common.save")}
                     </button>
@@ -391,66 +400,40 @@
                 <div
                     class="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center text-sky-500"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                    </svg>
+                    <Shield class="w-4 h-4" />
                 </div>
                 <h2 class="font-semibold text-slate-800 dark:text-white">
                     {$_("account.security")}
                 </h2>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {#each [{ icon: "M15 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM5 20v-1a7 7 0 0 1 14 0v1", label: $_("account.password"), sub: $_("account.password_sub"), accent: "" }, { icon: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", label: $_("account.two_factor"), sub: $_("account.two_factor_sub"), accent: "text-green-400" }, { icon: "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0", label: $_("account.notifications"), sub: $_("account.notif_sub"), accent: "" }] as item}
-                    <button
-                        class="flex items-center gap-3 px-4 py-3 rounded-xl
-                        bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700
-                        hover:border-sky-300 dark:hover:border-sky-700 text-left transition-all group"
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {#each securityItems as item}
+                    <a
+                        href={item.href}
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800
+                            border border-slate-100 dark:border-slate-700 hover:border-sky-300 dark:hover:border-sky-700
+                            text-left transition-all group cursor-pointer"
                     >
                         <div
                             class="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-500 shrink-0"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
+                            <svelte:component
+                                this={item.icon}
                                 class="w-5 h-5"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <path d={item.icon} />
-                            </svg>
+                            />
                         </div>
                         <div class="flex-1 min-w-0">
                             <p
                                 class="text-sm font-semibold text-slate-800 dark:text-white"
                             >
-                                {item.label}
+                                {$_(item.label)}
                             </p>
-                            <p
-                                class="text-xs {item.accent ||
-                                    'text-slate-400'}"
-                            >
-                                {item.sub}
-                            </p>
+                            <p class="text-xs text-slate-400">{$_(item.sub)}</p>
                         </div>
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
+                        <ChevronRight
                             class="w-4 h-4 text-slate-300 group-hover:text-sky-400 transition-colors shrink-0"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        >
-                            <polyline points="9 18 15 12 9 6" />
-                        </svg>
-                    </button>
+                        />
+                    </a>
                 {/each}
             </div>
         </div>
@@ -461,24 +444,7 @@
         >
             <div>
                 <div class="flex items-center gap-2 mb-1">
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-5 h-5 text-red-500"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path
-                            d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
-                        />
-                        <line x1="12" y1="9" x2="12" y2="13" /><line
-                            x1="12"
-                            y1="17"
-                            x2="12.01"
-                            y2="17"
-                        />
-                    </svg>
+                    <AlertTriangle class="w-5 h-5 text-red-500" />
                     <h2 class="font-bold text-red-500">
                         {$_("account.danger_zone")}
                     </h2>
@@ -487,14 +453,14 @@
                     {$_("account.danger_desc")}
                 </p>
             </div>
-            <button
-                class="shrink-0 px-5 py-2.5 rounded-xl text-sm font-bold
-                bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white
-                border border-red-500/30 hover:border-red-500
-                transition-all duration-200 active:scale-95"
+            <a
+                href="/account/delete"
+                class="shrink-0 px-5 py-2.5 rounded-xl text-sm font-bold cursor-pointer
+                    bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white
+                    border border-red-500/30 hover:border-red-500 transition-all duration-200 active:scale-95"
             >
                 {$_("account.delete_account")}
-            </button>
+            </a>
         </div>
     {/if}
 </div>

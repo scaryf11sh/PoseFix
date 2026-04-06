@@ -3,7 +3,7 @@
     import "../app.css";
     import { theme } from "$lib/stores/theme";
     import { onMount } from "svelte";
-
+    import { isLoading } from "svelte-i18n";
     let { children } = $props();
 
     onMount(() => {
@@ -33,4 +33,14 @@
     </script>
 </svelte:head>
 
-{@render children()}
+{#if $isLoading}
+    <div
+        class="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"
+    >
+        <div
+            class="w-6 h-6 rounded-full border-2 border-sky-400 border-t-transparent animate-spin"
+        ></div>
+    </div>
+{:else}
+    {@render children()}
+{/if}

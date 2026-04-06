@@ -3,40 +3,53 @@
     import { goto } from "$app/navigation";
     import { _, locale } from "svelte-i18n";
     import { theme, type ThemeMode } from "$lib/stores/theme";
-    import { getUser, updateUser, type User } from "$lib/db";
+    import { settingsStore } from "$lib/stores/settings";
+    import { updateUser } from "$lib/db";
     import { getCurrentUser } from "$lib/auth";
+    import { userStore } from "$lib/stores/user";
+    import {
+        Video,
+        Activity,
+        Bell,
+        Cloud,
+        RotateCcw,
+        Settings2,
+        Star,
+        CheckCircle,
+        Wifi,
+        WifiOff,
+        Save,
+    } from "@lucide/svelte";
 
-    // --- State ---
-    let user = $state<User | null>(null);
     let loading = $state(true);
     let saving = $state(false);
     let saved = $state(false);
+    let restored = $state(false);
     let checking = $state(false);
 
     onMount(async () => {
-        // --- Session guard ---
         const current = await getCurrentUser();
         if (!current) {
             goto("/auth");
             return;
         }
-        user = current;
+        if (!$userStore.user) userStore.setUser(current);
+        postureGoal = current.posture_goal;
         loading = false;
     });
 
-    // --- Language switcher ---
+    // --- Language ---
     const languages = [
         { code: "en", label: "English" },
         { code: "es", label: "Español" },
     ];
-
     function setLocale(code: string) {
         locale.set(code);
         localStorage.setItem("locale", code);
     }
 
     // --- Cameras ---
-    type CameraStatus = "ACTIVE DEVICE" | "STANDBY" | "DISCONNECTED";
+    type CameraStatus = "ACTIVE DEVICE" | "STANDBY";
     let cameras = $state([
         {
             id: "cam-1",
@@ -53,7 +66,6 @@
             status: "STANDBY" as CameraStatus,
         },
     ]);
-
     function selectCamera(id: string) {
         cameras = cameras.map((c) => ({
             ...c,
@@ -63,58 +75,68 @@
     }
 
     // --- Sensors ---
-    type SensorStatus = "ONLINE" | "OFFLINE";
     let sensors = $state([
         {
             id: "GL-9281",
             label: "Spinal Alignment Sensor",
             signal: "98%",
-            status: "ONLINE" as SensorStatus,
+            online: true,
         },
         {
             id: "GL-0432",
             label: "Lower Back Lumbar Pod",
             signal: "82%",
-            status: "ONLINE" as SensorStatus,
+            online: true,
         },
         {
             id: "GL-1100",
             label: "Neck Strain Monitor",
             signal: "--",
-            status: "OFFLINE" as SensorStatus,
+            online: false,
         },
     ]);
 
-    // --- Notifications ---
-    let notifications = $state([
-        { id: "posture", enabled: true },
-        { id: "weekly", enabled: true },
-        { id: "stretch", enabled: true },
-        { id: "drift", enabled: false },
-    ]);
+    // --- Notifications (from store) ---
+    let notifState = $state({ ...$settingsStore.notifications });
 
     // --- Preferences ---
-    let units = $state<"metric" | "imperial">("metric");
+    let units = $state($settingsStore.units);
     let postureGoal = $state(80);
-
-    $effect(() => {
-        if (user) postureGoal = user.posture_goal;
-    });
-
-    // --- AI ---
     let precision = $state<"High" | "Balanced" | "Low">("High");
 
     // --- Save ---
     async function saveChanges() {
+        const user = $userStore.user;
         if (!user) return;
         saving = true;
         try {
             await updateUser(user.id, { posture_goal: postureGoal });
+            settingsStore.save({
+                notifications: { ...notifState },
+                units,
+                language: $locale ?? "en",
+            });
             saved = true;
             setTimeout(() => (saved = false), 2500);
         } finally {
             saving = false;
         }
+    }
+
+    // --- Restore Defaults ---
+    function restoreDefaults() {
+        settingsStore.restore();
+        notifState = {
+            posture: true,
+            weekly: true,
+            stretch: true,
+            drift: false,
+        };
+        units = "metric";
+        postureGoal = 80;
+        precision = "High";
+        restored = true;
+        setTimeout(() => (restored = false), 2500);
     }
 
     function checkUpdates() {
@@ -124,6 +146,12 @@
 
     const firmware = "v4.82.0-stable";
     const lastBackup = "2 minutes ago";
+    const notifItems = [
+        { id: "posture", key: "posture" as keyof typeof notifState },
+        { id: "weekly", key: "weekly" as keyof typeof notifState },
+        { id: "stretch", key: "stretch" as keyof typeof notifState },
+        { id: "drift", key: "drift" as keyof typeof notifState },
+    ];
 </script>
 
 <div
@@ -144,34 +172,34 @@
                 <span
                     class="flex items-center gap-1.5 text-sm text-green-500 font-medium"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2.5"
-                    >
-                        <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    {$_("common.saved")}
+                    <CheckCircle class="w-4 h-4" />{$_("common.saved")}
+                </span>
+            {/if}
+            {#if restored}
+                <span
+                    class="flex items-center gap-1.5 text-sm text-sky-400 font-medium"
+                >
+                    <RotateCcw class="w-4 h-4" />Restored
                 </span>
             {/if}
             <button
-                onclick={() => {}}
-                class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                onclick={restoreDefaults}
+                class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium
+                    text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800
+                    transition-colors cursor-pointer flex items-center gap-2"
             >
-                {$_("settings.restore")}
+                <RotateCcw class="w-4 h-4" />{$_("settings.restore")}
             </button>
             <button
                 onclick={saveChanges}
                 disabled={saving || loading}
-                class="px-4 py-2 rounded-xl bg-sky-400 hover:bg-sky-500 text-white text-sm font-bold transition-all shadow-lg shadow-sky-400/20 active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                class="px-4 py-2 rounded-xl bg-sky-400 hover:bg-sky-500 text-white text-sm font-bold
+                    transition-all shadow-lg shadow-sky-400/20 active:scale-95 disabled:opacity-60
+                    flex items-center gap-2 cursor-pointer"
             >
                 {#if saving}
                     <svg
                         class="w-4 h-4 animate-spin"
-                        xmlns="http://www.w3.org/2000/svg"
                         fill="none"
                         viewBox="0 0 24 24"
                     >
@@ -189,6 +217,8 @@
                             d="M4 12a8 8 0 018-8v8z"
                         />
                     </svg>
+                {:else}
+                    <Save class="w-4 h-4" />
                 {/if}
                 {$_("common.save")}
             </button>
@@ -203,9 +233,8 @@
         </div>
     {:else}
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
-            <!-- Left column -->
             <div class="lg:col-span-3 flex flex-col gap-4">
-                <!-- Camera Selection -->
+                <!-- Camera -->
                 <div
                     class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5"
                 >
@@ -213,22 +242,7 @@
                         <div
                             class="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center text-sky-500"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="w-4 h-4"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <path d="M23 7l-7 5 7 5V7z" /><rect
-                                    x="1"
-                                    y="5"
-                                    width="15"
-                                    height="14"
-                                    rx="2"
-                                />
-                            </svg>
+                            <Video class="w-4 h-4" />
                         </div>
                         <h2
                             class="font-semibold text-slate-800 dark:text-white"
@@ -240,35 +254,18 @@
                         {#each cameras as cam}
                             <button
                                 onclick={() => selectCamera(cam.id)}
-                                class="flex items-center gap-3 p-3 rounded-xl text-left transition-all
+                                class="flex items-center gap-3 p-3 rounded-xl text-left transition-all cursor-pointer border
                                 {cam.active
                                     ? 'bg-sky-50 dark:bg-sky-900/20 border-sky-300 dark:border-sky-700'
-                                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300'}
-                                border"
+                                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300'}"
                             >
                                 <div
-                                    class="w-10 h-10 rounded-xl
+                                    class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors
                                 {cam.active
                                         ? 'bg-sky-100 dark:bg-sky-900/40 text-sky-400'
-                                        : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}
-                                flex items-center justify-center shrink-0 transition-colors"
+                                        : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}"
                                 >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        class="w-5 h-5"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
-                                        <path d="M23 7l-7 5 7 5V7z" /><rect
-                                            x="1"
-                                            y="5"
-                                            width="15"
-                                            height="14"
-                                            rx="2"
-                                        />
-                                    </svg>
+                                    <Video class="w-5 h-5" />
                                 </div>
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-1.5">
@@ -277,24 +274,9 @@
                                         >
                                             {cam.label}
                                         </p>
-                                        {#if cam.active}
-                                            <div
-                                                class="w-5 h-5 rounded-full bg-sky-400 flex items-center justify-center shrink-0"
-                                            >
-                                                <svg
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    class="w-3 h-3 text-white"
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    stroke-width="3"
-                                                >
-                                                    <polyline
-                                                        points="20 6 9 17 4 12"
-                                                    />
-                                                </svg>
-                                            </div>
-                                        {/if}
+                                        {#if cam.active}<CheckCircle
+                                                class="w-4 h-4 text-sky-400 shrink-0"
+                                            />{/if}
                                     </div>
                                     <p class="text-xs text-slate-400">
                                         {cam.sub}
@@ -321,7 +303,7 @@
                     </div>
                 </div>
 
-                <!-- Active Sensors -->
+                <!-- Sensors -->
                 <div
                     class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5"
                 >
@@ -330,16 +312,7 @@
                             <div
                                 class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-purple-500"
                             >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    class="w-4 h-4"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                >
-                                    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                                </svg>
+                                <Activity class="w-4 h-4" />
                             </div>
                             <h2
                                 class="font-semibold text-slate-800 dark:text-white"
@@ -347,22 +320,20 @@
                                 {$_("settings.sensors")}
                             </h2>
                         </div>
-                        <span class="text-xs text-slate-400">
-                            {$_("settings.connected", {
+                        <span class="text-xs text-slate-400"
+                            >{$_("settings.connected", {
                                 values: {
-                                    n: sensors.filter(
-                                        (s) => s.status === "ONLINE",
-                                    ).length,
+                                    n: sensors.filter((s) => s.online).length,
                                 },
-                            })}
-                        </span>
+                            })}</span
+                        >
                     </div>
                     <div class="space-y-2">
                         {#each sensors as s}
                             <div
-                                class="flex items-center gap-3 px-3 py-2.5 rounded-xl
-                            bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700
-                            {s.status === 'OFFLINE' ? 'opacity-60' : ''}"
+                                class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 {!s.online
+                                    ? 'opacity-60'
+                                    : ''}"
                             >
                                 <span
                                     class="text-xs font-mono text-slate-400 w-20 shrink-0"
@@ -372,18 +343,23 @@
                                     class="text-sm font-medium text-slate-700 dark:text-slate-200 flex-1"
                                     >{s.label}</span
                                 >
-                                <span class="text-xs text-slate-400 mr-2">
-                                    {$_("settings.signal", {
+                                <span class="text-xs text-slate-400 mr-2"
+                                    >{$_("settings.signal", {
                                         values: { val: s.signal },
-                                    })}
-                                </span>
+                                    })}</span
+                                >
                                 <span
-                                    class="text-[10px] font-bold px-2 py-0.5 rounded-md
-                                {s.status === 'ONLINE'
+                                    class="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md
+                                {s.online
                                         ? 'text-green-500 bg-green-500/10 border border-green-500/20'
                                         : 'text-slate-400 bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600'}"
                                 >
-                                    {s.status === "ONLINE"
+                                    {#if s.online}<Wifi
+                                            class="w-3 h-3"
+                                        />{:else}<WifiOff
+                                            class="w-3 h-3"
+                                        />{/if}
+                                    {s.online
                                         ? $_("settings.status.online")
                                         : $_("settings.status.offline")}
                                 </span>
@@ -392,38 +368,33 @@
                     </div>
                 </div>
 
-                <!-- Notification Rules -->
+                <!-- Notifications -->
                 <div
                     class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5"
                 >
-                    <div class="flex items-center gap-2 mb-4">
-                        <div
-                            class="w-7 h-7 rounded-lg bg-yellow-100 dark:bg-yellow-900/40 flex items-center justify-center text-yellow-500"
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="w-4 h-4"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <div
+                                class="w-7 h-7 rounded-lg bg-yellow-100 dark:bg-yellow-900/40 flex items-center justify-center text-yellow-500"
                             >
-                                <path
-                                    d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"
-                                />
-                            </svg>
+                                <Bell class="w-4 h-4" />
+                            </div>
+                            <h2
+                                class="font-semibold text-slate-800 dark:text-white"
+                            >
+                                {$_("settings.notifications")}
+                            </h2>
                         </div>
-                        <h2
-                            class="font-semibold text-slate-800 dark:text-white"
+                        <a
+                            href="/account/notifications"
+                            class="text-xs text-sky-400 hover:text-sky-500 font-medium cursor-pointer"
+                            >{$_("common.edit")} →</a
                         >
-                            {$_("settings.notifications")}
-                        </h2>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {#each notifications as n}
+                        {#each notifItems as n}
                             <div
-                                class="flex items-center justify-between px-3 py-2.5 rounded-xl
-                            bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700"
+                                class="flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700"
                             >
                                 <div class="mr-3">
                                     <p
@@ -436,26 +407,31 @@
                                     </p>
                                 </div>
                                 <button
-                                    onclick={() => (n.enabled = !n.enabled)}
-                                    class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0
-                                    {n.enabled
+                                    aria-label={$_(
+                                        `settings.notifs.${n.id}_toggle`,
+                                    )}
+                                    onclick={() =>
+                                        (notifState[n.key] =
+                                            !notifState[n.key])}
+                                    class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0 cursor-pointer
+                                    {notifState[n.key]
                                         ? 'bg-sky-400'
                                         : 'bg-slate-200 dark:bg-slate-600'}"
                                 >
                                     <span
-                                        class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
-                                    {n.enabled
+                                        class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 {notifState[
+                                            n.key
+                                        ]
                                             ? 'translate-x-5'
                                             : 'translate-x-0'}"
-                                    >
-                                    </span>
+                                    ></span>
                                 </button>
                             </div>
                         {/each}
                     </div>
                 </div>
 
-                <!-- Cloud Sync & Firmware -->
+                <!-- Cloud & Firmware -->
                 <div
                     class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm px-5 py-4 flex items-center justify-between gap-4 flex-wrap"
                 >
@@ -463,20 +439,7 @@
                         <div
                             class="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-500"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="w-5 h-5"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <polyline points="16 17 21 12 16 7" /><path
-                                    d="M21 12H9"
-                                /><path
-                                    d="M9 19H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4"
-                                />
-                            </svg>
+                            <Cloud class="w-5 h-5" />
                         </div>
                         <div>
                             <p
@@ -507,10 +470,9 @@
                         <button
                             onclick={checkUpdates}
                             disabled={checking}
-                            class="px-4 py-2 rounded-xl text-sm font-medium
+                            class="px-4 py-2 rounded-xl text-sm font-medium cursor-pointer
                             bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700
-                            border border-slate-200 dark:border-slate-700
-                            text-slate-700 dark:text-slate-200
+                            border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200
                             disabled:opacity-60 transition-all active:scale-95"
                         >
                             {checking
@@ -528,19 +490,7 @@
                         <div
                             class="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-500"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="w-5 h-5"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <path
-                                    d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"
-                                />
-                                <path d="M3 3v5h5" />
-                            </svg>
+                            <RotateCcw class="w-5 h-5" />
                         </div>
                         <div>
                             <p
@@ -555,12 +505,9 @@
                     </div>
                     <button
                         onclick={() => goto("/onboarding")}
-                        class="px-4 py-2 rounded-xl text-sm font-medium
-                        bg-slate-100 dark:bg-slate-800
-                        border border-slate-200 dark:border-slate-700
-                        text-slate-700 dark:text-slate-200
-                        hover:border-sky-400 hover:text-sky-400
-                        transition-all active:scale-95"
+                        class="px-4 py-2 rounded-xl text-sm font-medium cursor-pointer
+                        bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700
+                        text-slate-700 dark:text-slate-200 hover:border-sky-400 hover:text-sky-400 transition-all active:scale-95"
                     >
                         {$_("settings.launch_setup")}
                     </button>
@@ -577,18 +524,7 @@
                         <div
                             class="w-7 h-7 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center text-green-500"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="w-4 h-4"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <circle cx="12" cy="12" r="3" /><path
-                                    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
-                                />
-                            </svg>
+                            <Settings2 class="w-4 h-4" />
                         </div>
                         <h2
                             class="font-semibold text-slate-800 dark:text-white"
@@ -608,13 +544,13 @@
                             {#each [["light", "☀️", $_("settings.light")], ["dark", "🌙", $_("settings.dark")], ["system", "💻", $_("settings.system")]] as [val, emoji, label]}
                                 <button
                                     onclick={() => theme.set(val as ThemeMode)}
-                                    class="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-xs font-medium transition-all
+                                    class="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-medium cursor-pointer transition-all
                                     {$theme === val
                                         ? 'bg-sky-400 text-white shadow-lg shadow-sky-400/20'
                                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-sky-300'}"
                                 >
-                                    <span class="text-base">{emoji}</span>
-                                    {label}
+                                    <span class="text-base">{emoji}</span
+                                    >{label}
                                 </button>
                             {/each}
                         </div>
@@ -638,7 +574,7 @@
                             {#each languages as lang}
                                 <button
                                     onclick={() => setLocale(lang.code)}
-                                    class="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all
+                                    class="flex-1 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all
                                     {$locale === lang.code
                                         ? 'bg-sky-400 text-white shadow-lg shadow-sky-400/20'
                                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-sky-300'}"
@@ -649,7 +585,7 @@
                         </div>
                     </div>
 
-                    <!-- Display Units -->
+                    <!-- Units -->
                     <div class="mb-5">
                         <p
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2"
@@ -661,7 +597,7 @@
                                 <button
                                     onclick={() =>
                                         (units = val as "metric" | "imperial")}
-                                    class="flex-1 py-2 rounded-xl text-xs font-medium transition-all
+                                    class="flex-1 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all
                                     {units === val
                                         ? 'bg-sky-400 text-white shadow-lg shadow-sky-400/20'
                                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-sky-300'}"
@@ -673,31 +609,29 @@
                     </div>
 
                     <!-- Posture Goal -->
-                    {#if user}
-                        <div>
-                            <div class="flex justify-between items-center mb-2">
-                                <p
-                                    class="text-[10px] font-bold uppercase tracking-wider text-slate-400"
-                                >
-                                    {$_("settings.posture_goal")}
-                                </p>
-                                <span class="text-xs font-bold text-sky-400"
-                                    >{postureGoal}/100</span
-                                >
-                            </div>
-                            <input
-                                type="range"
-                                min="50"
-                                max="100"
-                                step="5"
-                                bind:value={postureGoal}
-                                class="w-full accent-sky-400"
-                            />
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <p
+                                class="text-[10px] font-bold uppercase tracking-wider text-slate-400"
+                            >
+                                {$_("settings.posture_goal")}
+                            </p>
+                            <span class="text-xs font-bold text-sky-400"
+                                >{postureGoal}/100</span
+                            >
                         </div>
-                    {/if}
+                        <input
+                            type="range"
+                            min="50"
+                            max="100"
+                            step="5"
+                            bind:value={postureGoal}
+                            class="w-full accent-sky-400 cursor-pointer"
+                        />
+                    </div>
                 </div>
 
-                <!-- AI Prediction Mode -->
+                <!-- AI -->
                 <div
                     class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5"
                 >
@@ -705,16 +639,7 @@
                         <div
                             class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-purple-500"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="w-4 h-4"
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                            >
-                                <path
-                                    d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"
-                                />
-                            </svg>
+                            <Star class="w-4 h-4" />
                         </div>
                         <h2
                             class="font-semibold text-slate-800 dark:text-white"
@@ -748,7 +673,7 @@
                                     <button
                                         onclick={() =>
                                             (precision = p as typeof precision)}
-                                        class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all
+                                        class="px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all
                                         {precision === p
                                             ? 'bg-sky-400 text-white'
                                             : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-600'}"
@@ -760,11 +685,9 @@
                         </div>
                     </div>
                     <button
-                        class="w-full py-2.5 rounded-xl text-sm font-bold
+                        class="w-full py-2.5 rounded-xl text-sm font-bold cursor-pointer
                     bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700
-                    border border-slate-200 dark:border-slate-700
-                    text-slate-700 dark:text-slate-200
-                    transition-all active:scale-95"
+                    border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 transition-all active:scale-95"
                     >
                         {$_("settings.configure_ai")}
                     </button>
