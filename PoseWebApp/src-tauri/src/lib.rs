@@ -184,6 +184,12 @@ pub fn run() {
             sql: "ALTER TABLE users ADD COLUMN password_hash TEXT;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "add_full_name_to_users_and_copy_from_username",
+            sql: "ALTER TABLE users ADD COLUMN full_name TEXT; UPDATE users SET full_name = username;",
+            kind: MigrationKind::Up,
+        }
     ];
 
     tauri::Builder::default()
