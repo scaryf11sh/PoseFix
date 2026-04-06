@@ -4,7 +4,14 @@
       "Bash(git checkout:*)",
       "Bash(git push:*)",
       "Bash(gh auth:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git -C /Users/scaryfish/Documents/uni/6to/Proyectos/PoseFix status --short)",
+      "Bash(git -C /Users/scaryfish/Documents/uni/6to/Proyectos/PoseFix rm --cached .claude/worktrees/festive-booth)",
+      "Bash(git -C /Users/scaryfish/Documents/uni/6to/Proyectos/PoseFix add .gitignore)",
+      "Bash(git -C /Users/scaryfish/Documents/uni/6to/Proyectos/PoseFix status)",
+      "Bash(git -C /Users/scaryfish/Documents/uni/6to/Proyectos/PoseFix ls-files --deleted)",
+      "Bash(git -C /Users/scaryfish/Documents/uni/6to/Proyectos/PoseFix restore --staged \".claude/worktrees/festive-booth\")",
+      "Bash(git -C /Users/scaryfish/Documents/uni/6to/Proyectos/PoseFix ls-files --stage \".claude/worktrees/festive-booth\")"
     ]
   }
 }
