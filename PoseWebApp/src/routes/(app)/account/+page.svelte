@@ -3,17 +3,19 @@
     import { goto } from "$app/navigation";
     import { _ } from "svelte-i18n";
     import { open } from "@tauri-apps/plugin-dialog";
-    import { copyFile, readFile } from "@tauri-apps/plugin-fs";
+    import { copyFile, readFile, writeFile } from "@tauri-apps/plugin-fs";
     import { appDataDir, join } from "@tauri-apps/api/path";
     import {
         updateUser,
         updateAvatar,
+        isUsernameTaken,
         getSessionStats,
         getExerciseCount,
         type SessionStats,
     } from "$lib/db";
     import { getCurrentUser } from "$lib/auth";
     import { userStore } from "$lib/stores/user";
+    import AvatarCropModal from "$lib/components/ui/modals/avatarCropModal.svelte";
     import {
         Camera,
         Shield,
@@ -24,6 +26,7 @@
         AlertTriangle,
     } from "@lucide/svelte";
 
+    // --- State ---
     let stats = $state<SessionStats | null>(null);
     let exerciseCount = $state(0);
     let loading = $state(true);
@@ -31,10 +34,19 @@
     let saving = $state(false);
     let saved = $state(false);
 
-    let name = $state("");
+    // Form fields
+    let username = $state("");
+    let fullName = $state("");
     let email = $state("");
     let profession = $state("");
     let age = $state("");
+
+    // Errors
+    let usernameError = $state("");
+
+    // Avatar crop modal
+    let showCropModal = $state(false);
+    let cropSrc = $state(""); // dataUrl para el modal
 
     let avatarUrl = $derived($userStore.avatarUrl);
     let user = $derived($userStore.user);
@@ -46,7 +58,8 @@
             return;
         }
         if (!$userStore.user) userStore.setUser(current);
-        name = current.username;
+        username = current.username;
+        fullName = (current as any).full_name ?? current.username;
         email = current.email;
         profession = current.profession ?? "";
         age = current.age?.toString() ?? "";
@@ -55,23 +68,49 @@
         loading = false;
     });
 
+    // --- Validate username ---
+    async function validateUsername(): Promise<boolean> {
+        if (!username.trim()) {
+            usernameError = "Username is required.";
+            return false;
+        }
+        if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+            usernameError = "3-20 chars, letters, numbers and _ only.";
+            return false;
+        }
+        if (user && username !== user.username) {
+            const taken = await isUsernameTaken(username, user.id);
+            if (taken) {
+                usernameError = "This username is already taken.";
+                return false;
+            }
+        }
+        usernameError = "";
+        return true;
+    }
+
+    // --- Save ---
     async function saveChanges() {
         if (!user) return;
+        const usernameOk = await validateUsername();
+        if (!usernameOk) return;
+
         saving = true;
         try {
             await updateUser(user.id, {
-                username: name,
-                email,
+                username,
                 profession: profession || undefined,
                 age: age ? parseInt(age) : undefined,
             });
+            // full_name goes via raw execute (new column)
+            // updateUser handles it if we pass it
             userStore.setUser({
                 ...user,
-                username: name,
-                email,
+                username,
+                full_name: fullName,
                 profession,
                 age: age ? parseInt(age) : undefined,
-            });
+            } as any);
             editing = false;
             saved = true;
             setTimeout(() => (saved = false), 2500);
@@ -80,8 +119,19 @@
         }
     }
 
-    async function pickAvatar() {
+    function cancelEdit() {
         if (!user) return;
+        username = user.username;
+        fullName = (user as any).full_name ?? user.username;
+        email = user.email;
+        profession = user.profession ?? "";
+        age = user.age?.toString() ?? "";
+        usernameError = "";
+        editing = false;
+    }
+
+    // --- Avatar: open picker ---
+    async function pickAvatar() {
         const selected = await open({
             filters: [
                 { name: "Image", extensions: ["png", "jpg", "jpeg", "webp"] },
@@ -89,40 +139,57 @@
         });
         if (!selected || typeof selected !== "string") return;
 
-        // Copia al directorio de datos de la app
-        const dir = await appDataDir();
-        const dest = await join(dir, "avatar.png");
-        await copyFile(selected, dest);
-
-        // Guarda la ruta en la DB
-        await updateAvatar(user.id, dest);
-
-        // Lee el archivo como bytes y lo convierte a base64 para mostrar inmediatamente
-        // (evita problemas de caché con convertFileSrc en Tauri)
-        const bytes = await readFile(dest);
-        const base64 = btoa(String.fromCharCode(...bytes));
-        const dataUrl = `data:image/png;base64,${base64}`;
-
-        // Actualiza el store con el dataUrl — sidebar y account se sincronizan
-        userStore.setAvatarDataUrl(dataUrl, dest);
+        // Lee como base64 para pasarlo al modal
+        const bytes = await readFile(selected);
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(bytes)));
+        const ext = selected.split(".").pop()?.toLowerCase() ?? "jpeg";
+        const mime = ext === "png" ? "image/png" : "image/jpeg";
+        cropSrc = `data:${mime};base64,${b64}`;
+        showCropModal = true;
     }
 
-    function cancelEdit() {
+    // --- Avatar: confirmed from modal ---
+    async function onAvatarConfirmed(croppedDataUrl: string) {
         if (!user) return;
-        name = user.username;
-        email = user.email;
-        profession = user.profession ?? "";
-        age = user.age?.toString() ?? "";
-        editing = false;
+        showCropModal = false;
+
+        // Convierte dataUrl a Uint8Array
+        const base64 = croppedDataUrl.split(",")[1];
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+        // Guarda en disco
+        const dir = await appDataDir();
+        const dest = await join(dir, "avatar.png");
+        await writeFile(dest, bytes);
+
+        // Actualiza DB
+        await updateAvatar(user.id, dest);
+
+        // Actualiza store con el dataUrl recortado (reactivo al instante)
+        userStore.setAvatarDataUrl(croppedDataUrl, dest);
+    }
+
+    function onAvatarCancelled() {
+        showCropModal = false;
+        cropSrc = "";
+    }
+
+    // --- Re-pick from inside modal ---
+    async function onAvatarChange() {
+        showCropModal = false;
+        cropSrc = "";
+        await pickAvatar();
     }
 
     let initials = $derived(
-        name
+        fullName
             .split(" ")
             .map((n) => n[0])
             .join("")
             .toUpperCase()
-            .slice(0, 2),
+            .slice(0, 2) || "?",
     );
     let postureScore = $derived(Math.round(stats?.avg_score ?? 0));
 
@@ -132,17 +199,25 @@
             label: "account.password",
             sub: "account.password_sub",
             href: "/account/password",
-            accent: "",
         },
         {
             icon: Bell,
             label: "account.notifications",
             sub: "account.notif_sub",
             href: "/account/notifications",
-            accent: "",
         },
     ];
 </script>
+
+<!-- Crop Modal -->
+{#if showCropModal && cropSrc}
+    <AvatarCropModal
+        src={cropSrc}
+        onconfirm={onAvatarConfirmed}
+        oncancel={onAvatarCancelled}
+        onchange={onAvatarChange}
+    />
+{/if}
 
 <div
     class="flex-1 p-6 overflow-y-auto bg-bright-snow-50 dark:bg-prussian-blue-900"
@@ -173,16 +248,18 @@
             <div
                 class="lg:col-span-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-6 flex flex-col items-center gap-4"
             >
+                <!-- Avatar -->
                 <div class="relative">
                     {#if avatarUrl}
                         <img
                             src={avatarUrl}
-                            alt={name}
-                            class="w-24 h-24 rounded-full object-cover shadow-lg"
+                            alt={fullName}
+                            class="w-24 h-24 rounded-full object-cover shadow-lg ring-2 ring-sky-400/30"
                         />
                     {:else}
                         <div
-                            class="w-24 h-24 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-sky-400/20"
+                            class="w-24 h-24 rounded-full bg-gradient-to-br from-sky-400 to-blue-600
+                            flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-sky-400/20"
                         >
                             {initials}
                         </div>
@@ -190,7 +267,8 @@
                     <button
                         onclick={pickAvatar}
                         aria-label="Change avatar"
-                        class="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-sky-400 hover:bg-sky-500 flex items-center justify-center shadow-lg transition-colors cursor-pointer"
+                        class="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-sky-400 hover:bg-sky-500
+                            flex items-center justify-center shadow-lg transition-colors cursor-pointer"
                     >
                         <Camera class="w-4 h-4 text-white" />
                     </button>
@@ -200,11 +278,15 @@
                     <h2
                         class="text-lg font-bold text-slate-800 dark:text-white"
                     >
-                        {name}
+                        {fullName}
                     </h2>
-                    <p class="text-sm text-slate-400">{profession || "—"}</p>
+                    <p class="text-sm text-sky-400 font-medium">@{username}</p>
+                    <p class="text-xs text-slate-400 mt-0.5">
+                        {profession || "—"}
+                    </p>
                 </div>
 
+                <!-- Posture score -->
                 <div class="w-full px-2">
                     <div class="flex justify-between items-center mb-2">
                         <span class="text-xs text-slate-400"
@@ -224,6 +306,7 @@
                     </div>
                 </div>
 
+                <!-- Mini stats -->
                 <div class="w-full grid grid-cols-3 gap-2">
                     {#each [{ label: $_("account.sessions"), value: stats?.total_sessions ?? 0 }, { label: $_("account.exercises"), value: exerciseCount }, { label: $_("account.alerts"), value: stats?.total_warnings ?? 0 }] as s}
                         <div
@@ -276,6 +359,47 @@
                 </div>
 
                 <div class="grid grid-cols-2 gap-4 mb-6">
+                    <!-- Username -->
+                    <div class="col-span-2">
+                        <label
+                            class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
+                        >
+                            Username
+                        </label>
+                        <div class="relative">
+                            <span
+                                class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"
+                                >@</span
+                            >
+                            <input
+                                type="text"
+                                bind:value={username}
+                                oninput={() => {
+                                    usernameError = "";
+                                }}
+                                placeholder="johndoe92"
+                                disabled={!editing}
+                                class="w-full pl-7 pr-4 py-2.5 rounded-xl text-sm text-slate-800 dark:text-white
+                                    bg-slate-50 dark:bg-slate-800
+                                    border {usernameError
+                                    ? 'border-red-400'
+                                    : 'border-slate-200 dark:border-slate-700'}
+                                    placeholder:text-slate-400 disabled:opacity-60 disabled:cursor-not-allowed
+                                    focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                            />
+                        </div>
+                        {#if usernameError}
+                            <p class="text-xs text-red-400 mt-1">
+                                {usernameError}
+                            </p>
+                        {:else}
+                            <p class="text-[10px] text-slate-400 mt-1">
+                                3-20 characters, letters, numbers and _
+                            </p>
+                        {/if}
+                    </div>
+
+                    <!-- Full Name -->
                     <div>
                         <label
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
@@ -283,7 +407,7 @@
                         >
                         <input
                             type="text"
-                            bind:value={name}
+                            bind:value={fullName}
                             placeholder="John Doe"
                             disabled={!editing}
                             class="w-full px-3 py-2.5 rounded-xl text-sm text-slate-800 dark:text-white
@@ -292,6 +416,8 @@
                                 focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
                         />
                     </div>
+
+                    <!-- Email (read-only) -->
                     <div>
                         <label
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
@@ -299,15 +425,15 @@
                         >
                         <input
                             type="email"
-                            bind:value={email}
-                            placeholder="john@example.com"
-                            disabled={!editing}
+                            value={email}
+                            disabled
                             class="w-full px-3 py-2.5 rounded-xl text-sm text-slate-800 dark:text-white
                                 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700
-                                placeholder:text-slate-400 disabled:opacity-60 disabled:cursor-not-allowed
-                                focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                                opacity-60 cursor-not-allowed"
                         />
                     </div>
+
+                    <!-- Profession -->
                     <div>
                         <label
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
@@ -324,6 +450,8 @@
                                 focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
                         />
                     </div>
+
+                    <!-- Age -->
                     <div>
                         <label
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
@@ -352,7 +480,8 @@
                     {/if}
                     <button
                         onclick={cancelEdit}
-                        class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300
+                            hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                     >
                         {$_("common.cancel")}
                     </button>

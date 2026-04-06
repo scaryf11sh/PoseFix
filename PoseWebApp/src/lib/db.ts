@@ -18,7 +18,8 @@ async function getDb(): Promise<Database> {
 
 export type User = {
     id: number;
-    username: string;
+    username: string;     // handle único @johndoe
+    full_name?: string;   // nombre real "John Doe"
     email: string;
     profession?: string;
     age?: number;
@@ -26,6 +27,18 @@ export type User = {
     posture_goal: number;
     created_at: string;
 };
+
+// Verifica si un username ya está tomado por otro usuario
+export async function isUsernameTaken(username: string, excludeId?: number): Promise<boolean> {
+    const db = await getDb();
+    const rows = await db.select<{ id: number }[]>(
+        excludeId
+            ? "SELECT id FROM users WHERE username = $1 AND id != $2"
+            : "SELECT id FROM users WHERE username = $1",
+        excludeId ? [username, excludeId] : [username]
+    );
+    return rows.length > 0;
+}
 
 export type UserSession = {
     id: number;
