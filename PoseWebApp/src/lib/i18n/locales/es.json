@@ -153,7 +153,16 @@
         "stable": "ESTABLE",
         "nominal": "NOMINAL",
         "warning": "ADVERTENCIA",
-        "disconnected": "Desconectado"
+        "disconnected": "Desconectado",
+        "noCamerasFound": "No se encontraron cámaras",
+        "noPermission": "Acceso a cámara denegado. Permítelo en la configuración del navegador.",
+        "requestingAccess": "Solicitando acceso a cámara...",
+        "landmarksActive": "Seguimiento de Postura Activo",
+        "landmarksOffline": "Seguimiento de Postura Desconectado",
+        "refreshCameras": "Actualizar Cámaras",
+        "liveData": "Datos en Vivo",
+        "dbFallback": "Usando datos históricos",
+        "wsConnecting": "Conectando al flujo de postura..."
     },
     "exercises": {
         "title": "Biblioteca de Ejercicios",
