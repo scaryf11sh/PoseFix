@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "SvelteKit Dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "PoseWebApp", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "Tauri Dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd PoseWebApp && bunx tauri dev"],
+      "port": 5173
+    },
+    {
+      "name": "Vite Preview",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "PoseWebApp", "preview"],
+      "port": 4173
+    }
+  ]
+}
