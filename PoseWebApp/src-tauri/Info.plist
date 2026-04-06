@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSCameraUsageDescription</key>
+    <string>PoseFix needs camera access to monitor your posture in real time.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>PoseFix may use the microphone for future audio-based features.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>PoseFix uses Bluetooth to discover XIAO ESP32-S3 Sense sensors.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>PoseFix connects to ESP32 sensors on your local network.</string>
+</dict>
+</plist>
