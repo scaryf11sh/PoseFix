@@ -346,7 +346,22 @@
             if (stats.avg_score) postureScore = Math.round(stats.avg_score);
         } catch {}
 
-        await detectCameras();
+        // Only auto-request if already granted (avoids silent failure before user gesture)
+        if (navigator.permissions) {
+            try {
+                const perm = await navigator.permissions.query({ name: "camera" as PermissionName });
+                if (perm.state === "granted") {
+                    await detectCameras();
+                } else {
+                    cameraPermission = perm.state === "denied" ? "denied" : "idle";
+                }
+            } catch {
+                // permissions API not available — try anyway
+                await detectCameras();
+            }
+        } else {
+            await detectCameras();
+        }
         connectWs();
         startRaf();
 

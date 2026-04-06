@@ -28,6 +28,14 @@
     "bundle": {
         "active": true,
         "targets": "all",
+        "macOS": {
+            "infoPlist": {
+                "NSCameraUsageDescription": "PoseFix needs camera access to monitor your posture in real time.",
+                "NSMicrophoneUsageDescription": "PoseFix may use the microphone for future audio-based features.",
+                "NSBluetoothAlwaysUsageDescription": "PoseFix uses Bluetooth to discover XIAO ESP32-S3 Sense sensors.",
+                "NSLocalNetworkUsageDescription": "PoseFix connects to ESP32 sensors on your local network."
+            }
+        },
         "icon": [
             "icons/32x32.png",
             "icons/128x128.png",
