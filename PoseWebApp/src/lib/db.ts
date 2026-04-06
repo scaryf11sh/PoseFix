@@ -283,6 +283,29 @@ export async function getActiveSession(userId: number): Promise<UserSession | nu
     return rows[0] ?? null;
 }
 
+export async function getSessionById(sessionId: number): Promise<UserSession | null> {
+    const db = await getDb();
+    const rows = await db.select<UserSession[]>(
+        "SELECT * FROM user_sessions WHERE id = $1",
+        [sessionId]
+    );
+    return rows[0] ?? null;
+}
+
+export async function getSessionCountInRange(
+    userId: number,
+    startDate: string,
+    endDate: string
+): Promise<number> {
+    const db = await getDb();
+    const rows = await db.select<{ count: number }[]>(
+        `SELECT COUNT(*) as count FROM user_sessions
+         WHERE user_id = $1 AND session_start >= $2 AND session_start <= $3`,
+        [userId, startDate, endDate]
+    );
+    return rows[0]?.count ?? 0;
+}
+
 // ─────────────────────────────────────────────
 // WARNINGS
 // ─────────────────────────────────────────────

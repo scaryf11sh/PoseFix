@@ -1,21 +1,32 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { goto } from "$app/navigation";
     import { cubicOut } from "svelte/easing";
     import { PieChart, LineChart, Text, defaultChartPadding } from "layerchart";
+    import { _ } from "svelte-i18n";
+    import { Eye, Clock, Lightbulb, Calendar, Activity, Trophy } from "@lucide/svelte";
+    import { getCurrentUser } from "$lib/auth";
+    import { userStore } from "$lib/stores/user";
+    import {
+        getWeeklyStats,
+        getSessionStats,
+        getActiveSession,
+    } from "$lib/db";
 
     // --- Score gauge ---
     let count = $state(100);
-    let score = 85;
-    let animated = $state(score);
+    let score = $state(85);
+    let animated = $state(0);
+    let dailyGoalPct = $state(85);
 
     let label = $derived(
         animated >= 95
-            ? "EXCELLENT POSTURE"
+            ? $_("dashboard.posture.excellent")
             : animated >= 80
-              ? "GOOD POSTURE"
+              ? $_("dashboard.posture.good")
               : animated >= 60
-                ? "FAIR POSTURE"
-                : "POOR POSTURE",
+                ? $_("dashboard.posture.fair")
+                : $_("dashboard.posture.poor"),
     );
 
     let pieData = $derived(
@@ -28,14 +39,16 @@
 
     // --- Line chart ---
     type DataPoint = { date: Date; value: number };
-    const days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
-    const weekValues = [72, 68, 80, 75, 85, 90, 85];
     const today = new Date();
-    const weekData: DataPoint[] = weekValues.map((value, i) => {
-        const d = new Date(today);
-        d.setDate(today.getDate() - (6 - i));
-        return { date: d, value };
-    });
+
+    const defaultWeekValues = [72, 68, 80, 75, 85, 90, 85];
+    let weekData = $state<DataPoint[]>(
+        defaultWeekValues.map((value, i) => {
+            const d = new Date(today);
+            d.setDate(today.getDate() - (6 - i));
+            return { date: d, value };
+        }),
+    );
 
     const dayValues = [60, 70, 78, 82, 85, 83, 85];
     const dayData: DataPoint[] = dayValues.map((value, i) => {
@@ -44,11 +57,12 @@
         return { date: d, value };
     });
 
+    const days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
     let view = $state<"Day" | "Week">("Week");
     let chartData = $derived(view === "Week" ? weekData : dayData);
 
     // --- Timer ---
-    let seconds = $state(2 * 3600 + 45 * 60 + 12);
+    let seconds = $state(0);
     let timerStr = $derived(() => {
         const h = Math.floor(seconds / 3600)
             .toString()
@@ -73,7 +87,62 @@
               : "#f59e0b",
     );
 
-    onMount(() => {
+    onMount(async () => {
+        const user = await getCurrentUser();
+        if (!user) {
+            goto("/auth");
+            return;
+        }
+        if (!$userStore.user) userStore.setUser(user);
+
+        // Load session stats for posture score gauge
+        try {
+            const stats = await getSessionStats(user.id);
+            if (stats.total_sessions > 0 && stats.avg_score) {
+                score = Math.round(stats.avg_score);
+                dailyGoalPct = Math.min(
+                    100,
+                    Math.round((stats.avg_score / user.posture_goal) * 100),
+                );
+            }
+        } catch (e) {
+            console.error("Failed to load session stats:", e);
+        }
+
+        // Load weekly stats for chart
+        try {
+            const weekly = await getWeeklyStats(user.id);
+            if (weekly.length > 0) {
+                const last7: DataPoint[] = [];
+                for (let i = 6; i >= 0; i--) {
+                    const d = new Date(today);
+                    d.setDate(today.getDate() - i);
+                    const dayStr = d.toISOString().split("T")[0];
+                    const found = weekly.find((w) => w.day === dayStr);
+                    last7.push({
+                        date: d,
+                        value: found ? Math.round(found.avg_score) : 0,
+                    });
+                }
+                weekData = last7;
+            }
+        } catch (e) {
+            console.error("Failed to load weekly stats:", e);
+        }
+
+        // Load active session for timer
+        try {
+            const activeSession = await getActiveSession(user.id);
+            if (activeSession) {
+                const start = new Date(activeSession.session_start);
+                seconds = Math.floor(
+                    (Date.now() - start.getTime()) / 1000,
+                );
+            }
+        } catch (e) {
+            console.error("Failed to load active session:", e);
+        }
+
         // Animate score gauge
         animated = 0;
         let start: number;
@@ -98,22 +167,23 @@
     <div class="flex items-start justify-between mb-6">
         <div>
             <h1 class="text-2xl font-bold text-slate-900 dark:text-white">
-                Daily Overview
+                {$_("dashboard.title")}
             </h1>
             <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Your posture has improved by 12% since last week.
+                {$_("dashboard.subtitle", { values: { pct: 12 } })}
             </p>
         </div>
         <div class="flex gap-3 *:cursor-pointer">
             <button
                 class="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
-                Export Report
+                {$_("common.export")}
             </button>
             <button
+                onclick={() => goto("/camera")}
                 class="px-4 py-2 rounded-xl bg-sky-400 text-white text-sm font-bold hover:bg-sky-500 transition-colors shadow-lg shadow-sky-400/30"
             >
-                Live Monitor
+                {$_("dashboard.liveMonitor")}
             </button>
         </div>
     </div>
@@ -126,7 +196,7 @@
         >
             <div class="flex flex-col w-full items-start gap-2">
                 <h2 class="font-semibold text-slate-800 dark:text-white">
-                    Posture Score
+                    {$_("dashboard.postureScore")}
                 </h2>
             </div>
             <div class="w-52 h-52 my-6">
@@ -163,7 +233,7 @@
                 {label}
             </span>
             <p class="text-center text-sm text-slate-400">
-                Current score based on real-time analysis
+                {$_("dashboard.currentScore")}
             </p>
         </div>
 
@@ -174,24 +244,26 @@
             <div class="flex items-start justify-between mb-1">
                 <div>
                     <h2 class="font-semibold text-slate-800 dark:text-white">
-                        Progress
+                        {$_("dashboard.dailyProgress")}
                     </h2>
                     <p class="text-xs text-slate-400">
-                        Postural alignment over time
+                        {$_("dashboard.posturalAlignment")}
                     </p>
                 </div>
                 <div
                     class="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1"
                 >
-                    {#each ["Day", "Week"] as v}
+                    {#each (["Day", "Week"] as Array<"Day" | "Week">) as v}
                         <button
-                            onclick={() => (view = v as "Day" | "Week")}
+                            onclick={() => (view = v)}
                             class="px-3 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer {view ===
                             v
                                 ? 'bg-sky-400 text-white shadow'
                                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}"
                         >
-                            {v}
+                            {v === "Day"
+                                ? $_("dashboard.day")
+                                : $_("dashboard.week")}
                         </button>
                     {/each}
                 </div>
@@ -226,28 +298,16 @@
                 <div
                     class="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-purple-500"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-5 h-5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path
-                            d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
-                        />
-                        <circle cx="12" cy="12" r="3" />
-                    </svg>
+                    <Eye class="w-5 h-5" />
                 </div>
                 <div>
                     <p
                         class="font-semibold text-slate-800 dark:text-white text-sm"
                     >
-                        Eye-to-Screen
+                        {$_("dashboard.eyeToScreen")}
                     </p>
                     <p class="text-xs text-slate-400 uppercase tracking-wider">
-                        Real-time depth
+                        {$_("dashboard.realtimeDepth")}
                     </p>
                 </div>
             </div>
@@ -264,7 +324,9 @@
                 ></div>
             </div>
             <div class="flex justify-between text-xs text-slate-400 mb-4">
-                <span>Too Close</span><span>Optimal</span><span>Too Far</span>
+                <span>{$_("dashboard.tooClose")}</span><span
+                    >{$_("dashboard.optimal")}</span
+                ><span>{$_("dashboard.tooFar")}</span>
             </div>
             <div
                 class="flex items-center gap-2 bg-green-50 dark:bg-green-900/20 rounded-xl px-3 py-2"
@@ -284,7 +346,7 @@
                     </svg>
                 </div>
                 <span class="text-sm text-green-600 dark:text-green-400"
-                    >Maintaining safe distance</span
+                    >{$_("dashboard.safeDistance")}</span
                 >
             </div>
         </div>
@@ -296,24 +358,16 @@
             <div class="flex items-start justify-between mb-2">
                 <div>
                     <p class="font-semibold text-slate-800 dark:text-white">
-                        Active Session
+                        {$_("dashboard.activeSession")}
                     </p>
-                    <p class="text-xs text-slate-400">Time spent at desk</p>
+                    <p class="text-xs text-slate-400">
+                        {$_("dashboard.timeAtDesk")}
+                    </p>
                 </div>
                 <div
                     class="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <circle cx="12" cy="12" r="10" />
-                        <polyline points="12 6 12 12 16 14" />
-                    </svg>
+                    <Clock class="w-4 h-4" />
                 </div>
             </div>
             <div class="flex-1 flex items-center justify-center">
@@ -327,7 +381,7 @@
                 onclick={() => (seconds = 0)}
                 class="mt-4 w-full py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
-                Reset Session
+                {$_("dashboard.resetSession")}
             </button>
         </div>
 
@@ -339,19 +393,10 @@
                 <div
                     class="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/40 flex items-center justify-center text-yellow-500"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                    >
-                        <path
-                            d="M12 2a7 7 0 0 1 5 11.9V17a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1v-3.1A7 7 0 0 1 12 2zm2 17v1a2 2 0 1 1-4 0v-1h4z"
-                        />
-                    </svg>
+                    <Lightbulb class="w-4 h-4" />
                 </div>
                 <p class="font-semibold text-slate-800 dark:text-white">
-                    Quick Tip
+                    {$_("dashboard.quickTip")}
                 </p>
             </div>
             <p class="text-sm text-slate-600 dark:text-slate-300 flex-1">
@@ -369,27 +414,12 @@
             <div
                 class="w-12 h-12 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-500"
             >
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="w-6 h-6"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                >
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" /><line
-                        x1="8"
-                        y1="2"
-                        x2="8"
-                        y2="6"
-                    />
-                    <line x1="3" y1="10" x2="21" y2="10" />
-                    <polyline points="9 16 11 18 15 14" />
-                </svg>
+                <Calendar class="w-6 h-6" />
             </div>
             <div>
-                <p class="text-xs text-slate-400 mb-1">Next stretch break in</p>
+                <p class="text-xs text-slate-400 mb-1">
+                    {$_("dashboard.nextBreak")}
+                </p>
                 <p class="text-xl font-bold text-slate-800 dark:text-white">
                     14 Minutes
                 </p>
@@ -402,21 +432,14 @@
             <div
                 class="w-12 h-12 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-500"
             >
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="w-6 h-6"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                >
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                </svg>
+                <Activity class="w-6 h-6" />
             </div>
             <div>
-                <p class="text-xs text-slate-400 mb-1">AI Detection Status</p>
+                <p class="text-xs text-slate-400 mb-1">
+                    {$_("dashboard.aiStatus")}
+                </p>
                 <p class="text-xl font-bold text-slate-800 dark:text-white">
-                    High Precision
+                    {$_("dashboard.highPrecision")}
                 </p>
             </div>
         </div>
@@ -427,29 +450,14 @@
             <div
                 class="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-500"
             >
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="w-6 h-6"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                >
-                    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
-                    <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
-                    <path d="M4 22h16" /><path
-                        d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"
-                    />
-                    <path
-                        d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"
-                    />
-                    <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
-                </svg>
+                <Trophy class="w-6 h-6" />
             </div>
             <div>
-                <p class="text-xs text-slate-400 mb-1">Daily Goal</p>
+                <p class="text-xs text-slate-400 mb-1">
+                    {$_("dashboard.dailyGoal")}
+                </p>
                 <p class="text-xl font-bold text-slate-800 dark:text-white">
-                    85% Complete
+                    {$_("dashboard.complete", { values: { pct: dailyGoalPct } })}
                 </p>
             </div>
         </div>
