@@ -3,8 +3,9 @@
     import { goto } from "$app/navigation";
     import { _ } from "svelte-i18n";
     import { open } from "@tauri-apps/plugin-dialog";
-    import { copyFile, readFile, writeFile } from "@tauri-apps/plugin-fs";
+    import { readFile, BaseDirectory } from "@tauri-apps/plugin-fs";
     import { appDataDir, join } from "@tauri-apps/api/path";
+    import { invoke } from "@tauri-apps/api/core";
     import {
         updateUser,
         updateAvatar,
@@ -15,7 +16,7 @@
     } from "$lib/db";
     import { getCurrentUser } from "$lib/auth";
     import { userStore } from "$lib/stores/user";
-    import AvatarCropModal from "$lib/components/ui/modals/avatarCropModal.svelte";
+    import AvatarCropModal from "$lib/components/ui/modals/AvatarCropModal.svelte";
     import {
         Camera,
         Shield,
@@ -40,13 +41,11 @@
     let email = $state("");
     let profession = $state("");
     let age = $state("");
-
-    // Errors
     let usernameError = $state("");
 
-    // Avatar crop modal
+    // Avatar modal
     let showCropModal = $state(false);
-    let cropSrc = $state(""); // dataUrl para el modal
+    let cropSrc = $state("");
 
     let avatarUrl = $derived($userStore.avatarUrl);
     let user = $derived($userStore.user);
@@ -68,14 +67,14 @@
         loading = false;
     });
 
-    // --- Validate username ---
+    // --- Username validation ---
     async function validateUsername(): Promise<boolean> {
         if (!username.trim()) {
             usernameError = "Username is required.";
             return false;
         }
         if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
-            usernameError = "3-20 chars, letters, numbers and _ only.";
+            usernameError = "3-20 chars: letters, numbers, underscore only.";
             return false;
         }
         if (user && username !== user.username) {
@@ -92,9 +91,8 @@
     // --- Save ---
     async function saveChanges() {
         if (!user) return;
-        const usernameOk = await validateUsername();
-        if (!usernameOk) return;
-
+        const ok = await validateUsername();
+        if (!ok) return;
         saving = true;
         try {
             await updateUser(user.id, {
@@ -102,8 +100,6 @@
                 profession: profession || undefined,
                 age: age ? parseInt(age) : undefined,
             });
-            // full_name goes via raw execute (new column)
-            // updateUser handles it if we pass it
             userStore.setUser({
                 ...user,
                 username,
@@ -130,7 +126,7 @@
         editing = false;
     }
 
-    // --- Avatar: open picker ---
+    // --- Avatar picker ---
     async function pickAvatar() {
         const selected = await open({
             filters: [
@@ -139,35 +135,40 @@
         });
         if (!selected || typeof selected !== "string") return;
 
-        // Lee como base64 para pasarlo al modal
+        // Lee el archivo seleccionado como base64 para el modal
         const bytes = await readFile(selected);
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(bytes)));
+        const arr = new Uint8Array(bytes);
+        let bin = "";
+        arr.forEach((b) => (bin += String.fromCharCode(b)));
+        const b64 = btoa(bin);
         const ext = selected.split(".").pop()?.toLowerCase() ?? "jpeg";
         const mime = ext === "png" ? "image/png" : "image/jpeg";
         cropSrc = `data:${mime};base64,${b64}`;
         showCropModal = true;
     }
 
-    // --- Avatar: confirmed from modal ---
+    // --- Avatar confirmed (cropped dataUrl from canvas) ---
     async function onAvatarConfirmed(croppedDataUrl: string) {
         if (!user) return;
         showCropModal = false;
 
-        // Convierte dataUrl a Uint8Array
+        // Convierte dataUrl → Uint8Array
         const base64 = croppedDataUrl.split(",")[1];
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const bin = atob(base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 
-        // Guarda en disco
+        // Guarda via comando Tauri (evita problema de permisos de plugin-fs)
         const dir = await appDataDir();
         const dest = await join(dir, "avatar.png");
-        await writeFile(dest, bytes);
+
+        // Usa invoke para escribir el archivo desde Rust
+        await invoke("save_avatar", { path: dest, data: Array.from(bytes) });
 
         // Actualiza DB
         await updateAvatar(user.id, dest);
 
-        // Actualiza store con el dataUrl recortado (reactivo al instante)
+        // Actualiza store con el dataUrl del canvas → inmediato, sin caché
         userStore.setAvatarDataUrl(croppedDataUrl, dest);
     }
 
@@ -176,7 +177,6 @@
         cropSrc = "";
     }
 
-    // --- Re-pick from inside modal ---
     async function onAvatarChange() {
         showCropModal = false;
         cropSrc = "";
@@ -186,30 +186,14 @@
     let initials = $derived(
         fullName
             .split(" ")
-            .map((n) => n[0])
+            .map((n: string) => n[0])
             .join("")
             .toUpperCase()
             .slice(0, 2) || "?",
     );
     let postureScore = $derived(Math.round(stats?.avg_score ?? 0));
-
-    const securityItems = [
-        {
-            icon: Shield,
-            label: "account.password",
-            sub: "account.password_sub",
-            href: "/account/password",
-        },
-        {
-            icon: Bell,
-            label: "account.notifications",
-            sub: "account.notif_sub",
-            href: "/account/notifications",
-        },
-    ];
 </script>
 
-<!-- Crop Modal -->
 {#if showCropModal && cropSrc}
     <AvatarCropModal
         src={cropSrc}
@@ -258,7 +242,7 @@
                         />
                     {:else}
                         <div
-                            class="w-24 h-24 rounded-full bg-linear-to-br from-sky-400 to-blue-600
+                            class="w-24 h-24 rounded-full bg-gradient-to-br from-sky-400 to-blue-600
                             flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-sky-400/20"
                         >
                             {initials}
@@ -266,7 +250,7 @@
                     {/if}
                     <button
                         onclick={pickAvatar}
-                        aria-label="Change avatar"
+                        aria-label="Change profile picture"
                         class="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-sky-400 hover:bg-sky-500
                             flex items-center justify-center shadow-lg transition-colors cursor-pointer"
                     >
@@ -308,18 +292,42 @@
 
                 <!-- Mini stats -->
                 <div class="w-full grid grid-cols-3 gap-2">
-                    {#each [{ label: $_("account.sessions"), value: stats?.total_sessions ?? 0 }, { label: $_("account.exercises"), value: exerciseCount }, { label: $_("account.alerts"), value: stats?.total_warnings ?? 0 }] as s}
-                        <div
-                            class="flex flex-col items-center p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700"
+                    <div
+                        class="flex flex-col items-center p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700"
+                    >
+                        <p
+                            class="text-base font-bold text-slate-800 dark:text-white"
                         >
-                            <p
-                                class="text-base font-bold text-slate-800 dark:text-white"
-                            >
-                                {s.value}
-                            </p>
-                            <p class="text-[10px] text-slate-400">{s.label}</p>
-                        </div>
-                    {/each}
+                            {stats?.total_sessions ?? 0}
+                        </p>
+                        <p class="text-[10px] text-slate-400">
+                            {$_("account.sessions")}
+                        </p>
+                    </div>
+                    <div
+                        class="flex flex-col items-center p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700"
+                    >
+                        <p
+                            class="text-base font-bold text-slate-800 dark:text-white"
+                        >
+                            {exerciseCount}
+                        </p>
+                        <p class="text-[10px] text-slate-400">
+                            {$_("account.exercises")}
+                        </p>
+                    </div>
+                    <div
+                        class="flex flex-col items-center p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700"
+                    >
+                        <p
+                            class="text-base font-bold text-slate-800 dark:text-white"
+                        >
+                            {stats?.total_warnings ?? 0}
+                        </p>
+                        <p class="text-[10px] text-slate-400">
+                            {$_("account.alerts")}
+                        </p>
+                    </div>
                 </div>
 
                 <div
@@ -352,6 +360,7 @@
                     <button
                         onclick={() =>
                             editing ? cancelEdit() : (editing = true)}
+                        aria-label={editing ? "Cancel editing" : "Edit profile"}
                         class="text-xs font-bold text-sky-400 hover:text-sky-500 transition-colors cursor-pointer"
                     >
                         {editing ? $_("common.cancel_edit") : $_("common.edit")}
@@ -362,18 +371,18 @@
                     <!-- Username -->
                     <div class="col-span-2">
                         <label
-                            for="username_input"
+                            for="field-username"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                         >
                             Username
                         </label>
                         <div class="relative">
                             <span
-                                class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"
+                                class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm select-none"
                                 >@</span
                             >
                             <input
-                                id="username_input"
+                                id="field-username"
                                 type="text"
                                 bind:value={username}
                                 oninput={() => {
@@ -396,7 +405,7 @@
                             </p>
                         {:else}
                             <p class="text-[10px] text-slate-400 mt-1">
-                                3-20 characters, letters, numbers and _
+                                3-20 characters · letters, numbers and _
                             </p>
                         {/if}
                     </div>
@@ -404,12 +413,13 @@
                     <!-- Full Name -->
                     <div>
                         <label
-                            for="full_name_input"
+                            for="field-fullname"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                            >{$_("account.full_name")}</label
                         >
+                            {$_("account.full_name")}
+                        </label>
                         <input
-                            id="full_name_input"
+                            id="field-fullname"
                             type="text"
                             bind:value={fullName}
                             placeholder="John Doe"
@@ -424,15 +434,17 @@
                     <!-- Email (read-only) -->
                     <div>
                         <label
-                            for="email_input"
+                            for="field-email"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                            >{$_("account.email")}</label
                         >
+                            {$_("account.email")}
+                        </label>
                         <input
-                            id="email_input"
+                            id="field-email"
                             type="email"
                             value={email}
                             disabled
+                            title="Email cannot be changed here"
                             class="w-full px-3 py-2.5 rounded-xl text-sm text-slate-800 dark:text-white
                                 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700
                                 opacity-60 cursor-not-allowed"
@@ -442,12 +454,13 @@
                     <!-- Profession -->
                     <div>
                         <label
-                            for="profession_input"
+                            for="field-profession"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                            >{$_("account.profession")}</label
                         >
+                            {$_("account.profession")}
+                        </label>
                         <input
-                            id="profession_input"
+                            id="field-profession"
                             type="text"
                             bind:value={profession}
                             placeholder="Engineer"
@@ -462,12 +475,13 @@
                     <!-- Age -->
                     <div>
                         <label
-                            for="age_input"
+                            for="field-age"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                            >{$_("account.age")}</label
                         >
+                            {$_("account.age")}
+                        </label>
                         <input
-                            id="age_input"
+                            id="field-age"
                             type="number"
                             bind:value={age}
                             placeholder="25"
@@ -490,6 +504,7 @@
                     {/if}
                     <button
                         onclick={cancelEdit}
+                        aria-label="Cancel changes"
                         class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300
                             hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                     >
@@ -497,6 +512,7 @@
                     </button>
                     <button
                         onclick={saveChanges}
+                        aria-label="Save profile changes"
                         disabled={!editing || saving}
                         class="px-5 py-2 rounded-xl text-sm font-bold bg-slate-900 dark:bg-sky-500 text-white
                             hover:bg-slate-700 dark:hover:bg-sky-400 disabled:opacity-40 disabled:cursor-not-allowed
@@ -546,34 +562,59 @@
                 </h2>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {#each securityItems as item}
-                    <a
-                        href={item.href}    
-                        class="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800
-                            border border-slate-100 dark:border-slate-700 hover:border-sky-300 dark:hover:border-sky-700
-                            text-left transition-all group cursor-pointer"
+                <a
+                    href="/account/password"
+                    aria-label="Change password"
+                    class="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800
+                        border border-slate-100 dark:border-slate-700 hover:border-sky-300 dark:hover:border-sky-700
+                        transition-all group cursor-pointer"
+                >
+                    <div
+                        class="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-500 shrink-0"
                     >
-                        <div
-                            class="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-500 shrink-0"
+                        <Shield class="w-5 h-5" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p
+                            class="text-sm font-semibold text-slate-800 dark:text-white"
                         >
-                            <svelte:component
-                                this={item.icon}
-                                class="w-5 h-5"
-                            />
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <p
-                                class="text-sm font-semibold text-slate-800 dark:text-white"
-                            >
-                                {$_(item.label)}
-                            </p>
-                            <p class="text-xs text-slate-400">{$_(item.sub)}</p>
-                        </div>
-                        <ChevronRight
-                            class="w-4 h-4 text-slate-300 group-hover:text-sky-400 transition-colors shrink-0"
-                        />
-                    </a>
-                {/each}
+                            {$_("account.password")}
+                        </p>
+                        <p class="text-xs text-slate-400">
+                            {$_("account.password_sub")}
+                        </p>
+                    </div>
+                    <ChevronRight
+                        class="w-4 h-4 text-slate-300 group-hover:text-sky-400 transition-colors shrink-0"
+                    />
+                </a>
+
+                <a
+                    href="/account/notifications"
+                    aria-label="Manage notifications"
+                    class="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800
+                        border border-slate-100 dark:border-slate-700 hover:border-sky-300 dark:hover:border-sky-700
+                        transition-all group cursor-pointer"
+                >
+                    <div
+                        class="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-500 shrink-0"
+                    >
+                        <Bell class="w-5 h-5" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p
+                            class="text-sm font-semibold text-slate-800 dark:text-white"
+                        >
+                            {$_("account.notifications")}
+                        </p>
+                        <p class="text-xs text-slate-400">
+                            {$_("account.notif_sub")}
+                        </p>
+                    </div>
+                    <ChevronRight
+                        class="w-4 h-4 text-slate-300 group-hover:text-sky-400 transition-colors shrink-0"
+                    />
+                </a>
             </div>
         </div>
 
@@ -594,6 +635,7 @@
             </div>
             <a
                 href="/account/delete"
+                aria-label="Delete account"
                 class="shrink-0 px-5 py-2.5 rounded-xl text-sm font-bold cursor-pointer
                     bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white
                     border border-red-500/30 hover:border-red-500 transition-all duration-200 active:scale-95"

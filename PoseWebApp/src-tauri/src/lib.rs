@@ -1,4 +1,13 @@
+use std::fs;
 use tauri_plugin_sql::{Migration, MigrationKind};
+
+#[tauri::command]
+fn save_avatar(path: String, data: Vec<u8>) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(&path, &data).map_err(|e| e.to_string())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -200,6 +209,7 @@ pub fn run() {
                 .add_migrations("sqlite:posefix.db", migrations)
                 .build(),
         )
+        .invoke_handler(tauri::generate_handler![save_avatar])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

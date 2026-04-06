@@ -10,6 +10,7 @@ function getSystemTheme(): "light" | "dark" {
 
 function getInitialMode(): ThemeMode {
     if (!browser) return "system";
+    // Default: system si no hay nada guardado
     return (localStorage.getItem("themeMode") as ThemeMode) ?? "system";
 }
 
@@ -20,18 +21,22 @@ function applyTheme(mode: ThemeMode) {
 }
 
 function createThemeStore() {
-    const { subscribe, set } = writable<ThemeMode>(getInitialMode());
+    const initial = getInitialMode();
+    const { subscribe, set } = writable<ThemeMode>(initial);
+
+    // Aplica inmediatamente al crear el store (cubre el caso de hot-reload)
+    applyTheme(initial);
 
     function apply(mode: ThemeMode) {
-        localStorage.setItem("themeMode", mode);
+        if (browser) localStorage.setItem("themeMode", mode);
         applyTheme(mode);
         set(mode);
     }
 
-    // Reacciona a cambios del sistema cuando está en modo "system"
+    // Reacciona a cambios del SO en tiempo real cuando está en modo "system"
     if (browser) {
         window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-            const stored = localStorage.getItem("themeMode") as ThemeMode;
+            const stored = (localStorage.getItem("themeMode") as ThemeMode) ?? "system";
             if (stored === "system") applyTheme("system");
         });
     }

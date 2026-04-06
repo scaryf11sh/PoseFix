@@ -2,63 +2,52 @@
     import { X, RefreshCw, Check } from "@lucide/svelte";
 
     interface Props {
-        src: string; // dataUrl de la imagen original
+        src: string;
         onconfirm: (croppedDataUrl: string) => void;
         oncancel: () => void;
-        onchange: () => void; // pide nueva imagen
+        onchange: () => void;
     }
 
     let { src, onconfirm, oncancel, onchange }: Props = $props();
 
-    // Canvas refs
     let canvas = $state<HTMLCanvasElement | null>(null);
-    let containerEl = $state<HTMLDivElement | null>(null);
-
-    // Image state
-    let img = $state<HTMLImageElement | null>(null);
     let imgLoaded = $state(false);
 
-    // Pan state
+    let img: HTMLImageElement | null = null;
     let offsetX = $state(0);
     let offsetY = $state(0);
     let scale = $state(1);
-    let dragging = $state(false);
+    let dragging = false;
     let lastX = 0;
     let lastY = 0;
+    let lastTouchDist = 0;
 
-    const SIZE = 280; // canvas size px
+    const SIZE = 280;
 
     $effect(() => {
         if (!src) return;
+        imgLoaded = false;
         const image = new Image();
         image.onload = () => {
             img = image;
-            imgLoaded = true;
-            // Center image
             const s = Math.max(SIZE / image.width, SIZE / image.height);
             scale = s;
             offsetX = (SIZE - image.width * s) / 2;
             offsetY = (SIZE - image.height * s) / 2;
+            imgLoaded = true;
             draw();
         };
         image.src = src;
-    });
-
-    $effect(() => {
-        if (imgLoaded) draw();
     });
 
     function draw() {
         if (!canvas || !img) return;
         const ctx = canvas.getContext("2d")!;
         ctx.clearRect(0, 0, SIZE, SIZE);
-
-        // Circular clip
         ctx.save();
         ctx.beginPath();
         ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2);
         ctx.clip();
-
         ctx.drawImage(
             img,
             offsetX,
@@ -67,13 +56,19 @@
             img.height * scale,
         );
         ctx.restore();
-
-        // Overlay ring
         ctx.strokeStyle = "rgba(56,189,248,0.8)";
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 1, 0, Math.PI * 2);
         ctx.stroke();
+    }
+
+    function clampOffsets() {
+        if (!img) return;
+        const w = img.width * scale;
+        const h = img.height * scale;
+        offsetX = Math.min(0, Math.max(SIZE - w, offsetX));
+        offsetY = Math.min(0, Math.max(SIZE - h, offsetY));
     }
 
     function onMouseDown(e: MouseEvent) {
@@ -83,20 +78,12 @@
     }
 
     function onMouseMove(e: MouseEvent) {
-        if (!dragging || !img) return;
-        const dx = e.clientX - lastX;
-        const dy = e.clientY - lastY;
+        if (!dragging) return;
+        offsetX += e.clientX - lastX;
+        offsetY += e.clientY - lastY;
         lastX = e.clientX;
         lastY = e.clientY;
-
-        const newX = offsetX + dx;
-        const newY = offsetY + dy;
-
-        // Clamp so image always covers circle
-        const w = img.width * scale;
-        const h = img.height * scale;
-        offsetX = Math.min(0, Math.max(SIZE - w, newX));
-        offsetY = Math.min(0, Math.max(SIZE - h, newY));
+        clampOffsets();
         draw();
     }
 
@@ -108,31 +95,24 @@
         if (!img) return;
         e.preventDefault();
         const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        const newScale = Math.min(
-            5,
-            Math.max(SIZE / Math.min(img.width, img.height), scale * delta),
-        );
-        const ratio = newScale / scale;
-        scale = newScale;
+        const min = SIZE / Math.min(img.width, img.height);
+        const newS = Math.min(5, Math.max(min, scale * delta));
+        const ratio = newS / scale;
+        scale = newS;
         offsetX = SIZE / 2 - (SIZE / 2 - offsetX) * ratio;
         offsetY = SIZE / 2 - (SIZE / 2 - offsetY) * ratio;
-
-        // Clamp
-        const w = img.width * scale;
-        const h = img.height * scale;
-        offsetX = Math.min(0, Math.max(SIZE - w, offsetX));
-        offsetY = Math.min(0, Math.max(SIZE - h, offsetY));
+        clampOffsets();
         draw();
     }
 
-    // Touch support
-    let lastTouchDist = 0;
     function onTouchStart(e: TouchEvent) {
+        e.preventDefault();
         if (e.touches.length === 1) {
             dragging = true;
             lastX = e.touches[0].clientX;
             lastY = e.touches[0].clientY;
         } else if (e.touches.length === 2) {
+            dragging = false;
             lastTouchDist = Math.hypot(
                 e.touches[0].clientX - e.touches[1].clientX,
                 e.touches[0].clientY - e.touches[1].clientY,
@@ -142,35 +122,28 @@
 
     function onTouchMove(e: TouchEvent) {
         e.preventDefault();
-        if (e.touches.length === 1 && dragging && img) {
-            const dx = e.touches[0].clientX - lastX;
-            const dy = e.touches[0].clientY - lastY;
+        if (!img) return;
+        if (e.touches.length === 1 && dragging) {
+            offsetX += e.touches[0].clientX - lastX;
+            offsetY += e.touches[0].clientY - lastY;
             lastX = e.touches[0].clientX;
             lastY = e.touches[0].clientY;
-            const w = img.width * scale;
-            const h = img.height * scale;
-            offsetX = Math.min(0, Math.max(SIZE - w, offsetX + dx));
-            offsetY = Math.min(0, Math.max(SIZE - h, offsetY + dy));
+            clampOffsets();
             draw();
-        } else if (e.touches.length === 2 && img) {
+        } else if (e.touches.length === 2) {
             const dist = Math.hypot(
                 e.touches[0].clientX - e.touches[1].clientX,
                 e.touches[0].clientY - e.touches[1].clientY,
             );
-            const delta = dist / lastTouchDist;
+            const ratio = dist / lastTouchDist;
             lastTouchDist = dist;
-            const newScale = Math.min(
-                5,
-                Math.max(SIZE / Math.min(img.width, img.height), scale * delta),
-            );
-            const ratio = newScale / scale;
-            scale = newScale;
-            offsetX = SIZE / 2 - (SIZE / 2 - offsetX) * ratio;
-            offsetY = SIZE / 2 - (SIZE / 2 - offsetY) * ratio;
-            const w = img.width * scale;
-            const h = img.height * scale;
-            offsetX = Math.min(0, Math.max(SIZE - w, offsetX));
-            offsetY = Math.min(0, Math.max(SIZE - h, offsetY));
+            const min = SIZE / Math.min(img.width, img.height);
+            const newS = Math.min(5, Math.max(min, scale * ratio));
+            const r2 = newS / scale;
+            scale = newS;
+            offsetX = SIZE / 2 - (SIZE / 2 - offsetX) * r2;
+            offsetY = SIZE / 2 - (SIZE / 2 - offsetY) * r2;
+            clampOffsets();
             draw();
         }
     }
@@ -181,29 +154,15 @@
 
     function confirm() {
         if (!canvas) return;
-        // Export as JPEG for smaller size
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-        onconfirm(dataUrl);
+        onconfirm(canvas.toDataURL("image/jpeg", 0.92));
     }
 </script>
 
-<!-- Backdrop -->
+<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-    role="button"
-    tabindex="0"
-    aria-label="Close modal backdrop"
     onclick={(e) => {
         if (e.target === e.currentTarget) oncancel();
-    }}
-    onkeydown={(e) => {
-        if (
-            e.target === e.currentTarget &&
-            (e.key === "Enter" || e.key === " ")
-        ) {
-            e.preventDefault();
-            oncancel();
-        }
     }}
 >
     <div
@@ -217,7 +176,7 @@
             </h2>
             <button
                 onclick={oncancel}
-                aria-label="Close"
+                aria-label="Close modal"
                 class="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center
                     text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
             >
@@ -226,12 +185,14 @@
         </div>
 
         <!-- Canvas -->
-        <div class="relative" bind:this={containerEl}>
+        <div class="relative">
             <canvas
                 bind:this={canvas}
                 width={SIZE}
                 height={SIZE}
-                class="rounded-full cursor-grab active:cursor-grabbing shadow-lg select-none"
+                class="rounded-full select-none {imgLoaded
+                    ? 'cursor-grab active:cursor-grabbing'
+                    : ''}"
                 style="width: {SIZE}px; height: {SIZE}px;"
                 onmousedown={onMouseDown}
                 onmousemove={onMouseMove}
@@ -254,13 +215,14 @@
         </div>
 
         <p class="text-xs text-slate-400">
-            Drag to reposition · Scroll to zoom
+            Drag to reposition · Scroll or pinch to zoom
         </p>
 
         <!-- Actions -->
         <div class="flex gap-3 w-full">
             <button
                 onclick={onchange}
+                aria-label="Change image"
                 class="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium cursor-pointer
                     bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700
                     text-slate-600 dark:text-slate-300 hover:border-sky-400 hover:text-sky-400 transition-all"
@@ -270,6 +232,7 @@
             </button>
             <button
                 onclick={confirm}
+                aria-label="Apply crop"
                 class="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold cursor-pointer
                     bg-sky-400 hover:bg-sky-500 text-white shadow-lg shadow-sky-400/20 transition-all active:scale-95"
             >

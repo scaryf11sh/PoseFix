@@ -2,39 +2,41 @@
     import { goto } from "$app/navigation";
     import { _ } from "svelte-i18n";
     import { registerUser, loginUser, setCurrentUser } from "$lib/auth";
+    import { toast } from "$lib/stores/toast";
+    import { Eye, EyeOff, Lock, Mail, User, AtSign } from "@lucide/svelte";
 
-    // --- Mode ---
-    let mode = $state<"signup" | "login">("signup");
+    let mode = $state<"signup" | "login">("login");
 
-    // --- Fields ---
+    // Fields
     let fullName = $state("");
-    let email = $state("");
+    let emailOrUsername = $state(""); // login acepta ambos
+    let email = $state(""); // solo signup
     let password = $state("");
     let confirm = $state("");
     let agreed = $state(false);
     let showPass = $state(false);
+    let showConf = $state(false);
 
-    // --- State ---
     let loading = $state(false);
     let errors = $state<Record<string, string>>({});
 
     function validate(): boolean {
         const e: Record<string, string> = {};
-
-        if (mode === "signup" && !fullName.trim())
-            e.name = $_("auth.errors.name_required");
-
-        if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-            e.email = $_("auth.errors.email_invalid");
-
-        if (password.length < 8) e.password = $_("auth.errors.password_short");
-
-        if (mode === "signup" && password !== confirm)
-            e.confirm = $_("auth.errors.password_mismatch");
-
-        if (mode === "signup" && !agreed)
-            e.terms = $_("auth.errors.terms_required");
-
+        if (mode === "signup") {
+            if (!fullName.trim()) e.name = $_("auth.errors.name_required");
+            if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+                e.email = $_("auth.errors.email_invalid");
+            if (password.length < 8)
+                e.password = $_("auth.errors.password_short");
+            if (password !== confirm)
+                e.confirm = $_("auth.errors.password_mismatch");
+            if (!agreed) e.terms = $_("auth.errors.terms_required");
+        } else {
+            if (!emailOrUsername.trim())
+                e.identifier = $_("auth.errors.email_invalid");
+            if (password.length < 8)
+                e.password = $_("auth.errors.password_short");
+        }
         errors = e;
         return Object.keys(e).length === 0;
     }
@@ -43,7 +45,6 @@
         if (!validate()) return;
         loading = true;
         errors = {};
-
         try {
             if (mode === "signup") {
                 const result = await registerUser({
@@ -52,22 +53,41 @@
                     password,
                 });
                 if (!result.success) {
-                    errors = { email: $_("auth.errors.email_taken") };
+                    if (result.error === "email_taken") {
+                        errors = { email: $_("auth.errors.email_taken") };
+                        toast.error($_("auth.errors.email_taken"));
+                    }
                     return;
                 }
+                toast.success("Account created! Setting up your profile...");
                 setCurrentUser(result.userId);
                 goto("/onboarding");
             } else {
-                const result = await loginUser({ email, password });
+                const result = await loginUser({ emailOrUsername, password });
                 if (!result.success) {
-                    errors = {
-                        password: $_("auth.errors.invalid_credentials"),
-                    };
+                    if (result.error === "no_password") {
+                        errors = {
+                            password:
+                                "This account has no password set. Please register again.",
+                        };
+                        toast.error(
+                            "Account has no password set. Please create a new account.",
+                        );
+                    } else {
+                        errors = {
+                            password: $_("auth.errors.invalid_credentials"),
+                        };
+                        toast.error($_("auth.errors.invalid_credentials"));
+                    }
                     return;
                 }
+                toast.success("Welcome back!");
                 setCurrentUser(result.user.id);
                 goto("/");
             }
+        } catch (err) {
+            console.error("Auth error:", err);
+            toast.error("Something went wrong. Please try again.");
         } finally {
             loading = false;
         }
@@ -79,19 +99,25 @@
         password = "";
         confirm = "";
     }
+
+    // Input class helper
+    const inputClass = (hasError: boolean) =>
+        `w-full pl-10 pr-4 py-3 rounded-xl text-sm
+         bg-slate-50 dark:bg-slate-800
+         border ${hasError ? "border-red-400" : "border-slate-200 dark:border-slate-700"}
+         text-slate-800 dark:text-white placeholder:text-slate-400
+         focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all`;
 </script>
 
 <div
     class="min-h-screen w-full flex flex-col bg-slate-50 dark:bg-slate-950 relative overflow-hidden"
 >
-    <!-- Background glow -->
+    <!-- Glows -->
     <div
-        class="absolute top-0 left-1/4 w-125 h-125 rounded-full
-        bg-sky-400/5 dark:bg-sky-400/8 blur-[140px] pointer-events-none"
+        class="absolute top-0 left-1/4 w-[500px] h-[500px] rounded-full bg-sky-400/5 dark:bg-sky-400/8 blur-[140px] pointer-events-none"
     ></div>
     <div
-        class="absolute bottom-0 right-1/4 w-100 h-100 rounded-full
-        bg-blue-600/5 dark:bg-blue-600/8 blur-[120px] pointer-events-none"
+        class="absolute bottom-0 right-1/4 w-[400px] h-[400px] rounded-full bg-blue-600/5 dark:bg-blue-600/8 blur-[120px] pointer-events-none"
     ></div>
 
     <!-- Top bar -->
@@ -118,7 +144,7 @@
         <button
             aria-label="Help"
             class="w-8 h-8 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700
-                flex items-center justify-center text-slate-400 hover:text-sky-400 transition-colors shadow-sm"
+            flex items-center justify-center text-slate-400 hover:text-sky-400 transition-colors shadow-sm cursor-pointer"
         >
             <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -130,7 +156,8 @@
             >
                 <circle cx="12" cy="12" r="10" /><path
                     d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
-                /><line x1="12" y1="17" x2="12.01" y2="17" />
+                />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
         </button>
     </div>
@@ -138,14 +165,12 @@
     <!-- Card -->
     <div class="flex-1 flex items-center justify-center px-4 py-8">
         <div
-            class="w-full max-w-md
-            bg-white dark:bg-slate-900
+            class="w-full max-w-md bg-white dark:bg-slate-900
             border border-slate-200 dark:border-slate-800
-            rounded-3xl shadow-2xl shadow-slate-900/10 dark:shadow-black/40
-            overflow-hidden"
+            rounded-3xl shadow-2xl shadow-slate-900/10 dark:shadow-black/40 overflow-hidden"
         >
             <div
-                class="h-0.5 bg-linear-to-r from-sky-400 via-blue-500 to-sky-400"
+                class="h-0.5 bg-gradient-to-r from-sky-400 via-blue-500 to-sky-400"
             ></div>
 
             <div class="p-8">
@@ -166,97 +191,96 @@
                 </div>
 
                 <div class="space-y-4">
-                    <!-- Full Name -->
+                    <!-- Full Name (signup) -->
                     {#if mode === "signup"}
                         <div>
                             <label
-                                for="fullName"
+                                for="auth-fullname"
                                 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                             >
                                 {$_("auth.full_name")}
                             </label>
                             <div class="relative">
-                                <svg
+                                <User
                                     class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                >
-                                    <path
-                                        d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
-                                    /><circle cx="12" cy="7" r="4" />
-                                </svg>
+                                />
                                 <input
-                                    id="fullName"
+                                    id="auth-fullname"
                                     type="text"
                                     bind:value={fullName}
                                     placeholder="John Doe"
-                                    class="w-full pl-10 pr-4 py-3 rounded-xl text-sm
-                                        bg-slate-50 dark:bg-slate-800
-                                        border {errors.name
-                                        ? 'border-red-400'
-                                        : 'border-slate-200 dark:border-slate-700'}
-                                        text-slate-800 dark:text-white placeholder:text-slate-400
-                                        focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                                    class={inputClass(!!errors.name)}
                                 />
                             </div>
-                            {#if errors.name}
-                                <p class="text-xs text-red-400 mt-1">
+                            {#if errors.name}<p
+                                    class="text-xs text-red-400 mt-1"
+                                >
                                     {errors.name}
-                                </p>
-                            {/if}
+                                </p>{/if}
+                        </div>
+
+                        <!-- Email (signup) -->
+                        <div>
+                            <label
+                                for="auth-email"
+                                class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
+                            >
+                                {$_("auth.email")}
+                            </label>
+                            <div class="relative">
+                                <Mail
+                                    class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                                />
+                                <input
+                                    id="auth-email"
+                                    type="email"
+                                    bind:value={email}
+                                    placeholder="john@example.com"
+                                    class={inputClass(!!errors.email)}
+                                />
+                            </div>
+                            {#if errors.email}<p
+                                    class="text-xs text-red-400 mt-1"
+                                >
+                                    {errors.email}
+                                </p>{/if}
                         </div>
                     {/if}
 
-                    <!-- Email -->
-                    <div>
-                        <label
-                            for="email"
-                            class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                        >
-                            {$_("auth.email")}
-                        </label>
-                        <div class="relative">
-                            <svg
-                                class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
+                    <!-- Email or Username (login) -->
+                    {#if mode === "login"}
+                        <div>
+                            <label
+                                for="auth-identifier"
+                                class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                             >
-                                <path
-                                    d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
-                                /><polyline points="22,6 12,13 2,6" />
-                            </svg>
-                            <input
-                                id="email"
-                                type="email"
-                                bind:value={email}
-                                placeholder="john@example.com"
-                                class="w-full pl-10 pr-4 py-3 rounded-xl text-sm
-                                    bg-slate-50 dark:bg-slate-800
-                                    border {errors.email
-                                    ? 'border-red-400'
-                                    : 'border-slate-200 dark:border-slate-700'}
-                                    text-slate-800 dark:text-white placeholder:text-slate-400
-                                    focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
-                            />
+                                Email or Username
+                            </label>
+                            <div class="relative">
+                                <AtSign
+                                    class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                                />
+                                <input
+                                    id="auth-identifier"
+                                    type="text"
+                                    bind:value={emailOrUsername}
+                                    placeholder="john@example.com or johndoe92"
+                                    class={inputClass(!!errors.identifier)}
+                                />
+                            </div>
+                            {#if errors.identifier}<p
+                                    class="text-xs text-red-400 mt-1"
+                                >
+                                    {errors.identifier}
+                                </p>{/if}
                         </div>
-                        {#if errors.email}
-                            <p class="text-xs text-red-400 mt-1">
-                                {errors.email}
-                            </p>
-                        {/if}
-                    </div>
+                    {/if}
 
                     <!-- Password -->
                     <div>
                         <div class="flex justify-between items-center mb-1.5">
                             <label
-                                for="password"
+                                for="auth-password"
                                 class="text-[10px] font-bold uppercase tracking-wider text-slate-400"
                             >
                                 {$_("auth.password")}
@@ -264,42 +288,26 @@
                             {#if mode === "login"}
                                 <button
                                     type="button"
-                                    class="text-[10px] text-sky-400 hover:text-sky-500 font-medium transition-colors"
+                                    aria-label="Forgot password"
+                                    class="text-[10px] text-sky-400 hover:text-sky-500 font-medium transition-colors cursor-pointer"
                                 >
                                     {$_("auth.forgot_password")}
                                 </button>
                             {/if}
                         </div>
                         <div class="relative">
-                            <svg
+                            <Lock
                                 class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <rect
-                                    x="3"
-                                    y="11"
-                                    width="18"
-                                    height="11"
-                                    rx="2"
-                                    ry="2"
-                                /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                            </svg>
+                            />
                             <input
-                                id="password"
+                                id="auth-password"
                                 type={showPass ? "text" : "password"}
                                 bind:value={password}
                                 placeholder="••••••••"
-                                class="w-full pl-10 pr-10 py-3 rounded-xl text-sm
-                                    bg-slate-50 dark:bg-slate-800
-                                    border {errors.password
-                                    ? 'border-red-400'
-                                    : 'border-slate-200 dark:border-slate-700'}
-                                    text-slate-800 dark:text-white placeholder:text-slate-400
-                                    focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                                class={inputClass(!!errors.password).replace(
+                                    "pr-4",
+                                    "pr-10",
+                                )}
                             />
                             <button
                                 type="button"
@@ -307,91 +315,63 @@
                                     ? "Hide password"
                                     : "Show password"}
                                 onclick={() => (showPass = !showPass)}
-                                class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-sky-400 transition-colors"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-sky-400 transition-colors cursor-pointer"
                             >
                                 {#if showPass}
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        class="w-4 h-4"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
-                                        <path
-                                            d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
-                                        />
-                                        <line x1="1" y1="1" x2="23" y2="23" />
-                                    </svg>
+                                    <EyeOff class="w-4 h-4" />
                                 {:else}
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        class="w-4 h-4"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
-                                        <path
-                                            d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
-                                        /><circle cx="12" cy="12" r="3" />
-                                    </svg>
+                                    <Eye class="w-4 h-4" />
                                 {/if}
                             </button>
                         </div>
-                        {#if errors.password}
-                            <p class="text-xs text-red-400 mt-1">
+                        {#if errors.password}<p
+                                class="text-xs text-red-400 mt-1"
+                            >
                                 {errors.password}
-                            </p>
-                        {/if}
+                            </p>{/if}
                     </div>
 
-                    <!-- Confirm Password -->
+                    <!-- Confirm Password (signup) -->
                     {#if mode === "signup"}
                         <div>
                             <label
-                                for="confirm"
+                                for="auth-confirm"
                                 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                             >
                                 {$_("auth.confirm_password")}
                             </label>
                             <div class="relative">
-                                <svg
+                                <Lock
                                     class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                >
-                                    <rect
-                                        x="3"
-                                        y="11"
-                                        width="18"
-                                        height="11"
-                                        rx="2"
-                                        ry="2"
-                                    /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                                </svg>
+                                />
                                 <input
-                                    id="confirm"
-                                    type="password"
+                                    id="auth-confirm"
+                                    type={showConf ? "text" : "password"}
                                     bind:value={confirm}
                                     placeholder="••••••••"
-                                    class="w-full pl-10 pr-4 py-3 rounded-xl text-sm
-                                        bg-slate-50 dark:bg-slate-800
-                                        border {errors.confirm
-                                        ? 'border-red-400'
-                                        : 'border-slate-200 dark:border-slate-700'}
-                                        text-slate-800 dark:text-white placeholder:text-slate-400
-                                        focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                                    class={inputClass(!!errors.confirm).replace(
+                                        "pr-4",
+                                        "pr-10",
+                                    )}
                                 />
+                                <button
+                                    type="button"
+                                    aria-label={showConf
+                                        ? "Hide confirm password"
+                                        : "Show confirm password"}
+                                    onclick={() => (showConf = !showConf)}
+                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-sky-400 transition-colors cursor-pointer"
+                                >
+                                    {#if showConf}<EyeOff
+                                            class="w-4 h-4"
+                                        />{:else}<Eye class="w-4 h-4" />{/if}
+                                </button>
                             </div>
-                            {#if errors.confirm}
-                                <p class="text-xs text-red-400 mt-1">
+                            {#if errors.confirm}<p
+                                    class="text-xs text-red-400 mt-1"
+                                >
                                     {errors.confirm}
-                                </p>
-                            {/if}
+                                </p>{/if}
                         </div>
 
                         <!-- Terms -->
@@ -402,6 +382,7 @@
                                 <input
                                     type="checkbox"
                                     bind:checked={agreed}
+                                    aria-label="Agree to terms"
                                     class="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-slate-600 accent-sky-400 shrink-0"
                                 />
                                 <span
@@ -421,11 +402,11 @@
                                     >.
                                 </span>
                             </label>
-                            {#if errors.terms}
-                                <p class="text-xs text-red-400 mt-1">
+                            {#if errors.terms}<p
+                                    class="text-xs text-red-400 mt-1"
+                                >
                                     {errors.terms}
-                                </p>
-                            {/if}
+                                </p>{/if}
                         </div>
                     {/if}
                 </div>
@@ -433,19 +414,20 @@
                 <!-- Submit -->
                 <button
                     type="button"
+                    aria-label={mode === "signup"
+                        ? "Create account"
+                        : "Sign in"}
                     onclick={submit}
                     disabled={loading}
-                    class="w-full mt-6 py-3.5 rounded-xl font-bold text-sm
+                    class="w-full mt-6 py-3.5 rounded-xl font-bold text-sm cursor-pointer
                         bg-slate-800 dark:bg-sky-500 hover:bg-slate-700 dark:hover:bg-sky-400
                         text-sky-400 dark:text-white
                         disabled:opacity-60 disabled:cursor-not-allowed
-                        transition-all shadow-lg active:scale-95
-                        flex items-center justify-center gap-2"
+                        transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
                 >
                     {#if loading}
                         <svg
                             class="w-4 h-4 animate-spin"
-                            xmlns="http://www.w3.org/2000/svg"
                             fill="none"
                             viewBox="0 0 24 24"
                         >
@@ -478,9 +460,8 @@
                     ></div>
                     <span
                         class="text-[10px] font-bold uppercase tracking-widest text-slate-400"
+                        >{$_("auth.or_continue_with")}</span
                     >
-                        {$_("auth.or_continue_with")}
-                    </span>
                     <div
                         class="flex-1 h-px bg-slate-200 dark:bg-slate-700"
                     ></div>
@@ -489,12 +470,11 @@
                 <!-- Google -->
                 <button
                     type="button"
-                    class="w-full py-3 rounded-xl text-sm font-medium
-                        bg-white dark:bg-slate-800
-                        border border-slate-200 dark:border-slate-700
+                    aria-label="Continue with Google"
+                    class="w-full py-3 rounded-xl text-sm font-medium cursor-pointer
+                        bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700
                         text-slate-700 dark:text-slate-200
-                        hover:border-sky-300 hover:shadow-sm
-                        transition-all flex items-center justify-center gap-3"
+                        hover:border-sky-300 hover:shadow-sm transition-all flex items-center justify-center gap-3"
                 >
                     <svg class="w-4 h-4" viewBox="0 0 24 24">
                         <path
@@ -526,8 +506,9 @@
                         : $_("auth.no_account")}
                     <button
                         type="button"
+                        aria-label="Switch auth mode"
                         onclick={switchMode}
-                        class="text-sky-400 hover:text-sky-500 font-bold ml-1 transition-colors"
+                        class="text-sky-400 hover:text-sky-500 font-bold ml-1 transition-colors cursor-pointer"
                     >
                         {mode === "signup"
                             ? $_("auth.sign_in")
@@ -541,13 +522,14 @@
     <!-- Footer -->
     <div class="flex items-center justify-center gap-6 py-4 px-6 flex-wrap">
         <p class="text-[10px] uppercase tracking-widest text-slate-400">
-            © 2024 Glacier Ergonomics. Precision in Posture.
+            © 2024 Glacier Ergonomics
         </p>
         <div class="flex gap-4">
             {#each ["Privacy", "Terms", "Support"] as link}
                 <button
                     type="button"
-                    class="text-[10px] uppercase tracking-widest text-slate-400 hover:text-sky-400 transition-colors"
+                    aria-label={link}
+                    class="text-[10px] uppercase tracking-widest text-slate-400 hover:text-sky-400 transition-colors cursor-pointer"
                 >
                     {link}
                 </button>

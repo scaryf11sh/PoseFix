@@ -54,7 +54,7 @@
         },
         {
             id: 3,
-            name: "Glacier Band 2.0",
+            name: "PoseFix Band 2.0",
             sub: "BT Low Energy",
             status: "Connected" as SensorStatus,
             icon: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z",
@@ -154,7 +154,7 @@
             </svg>
         </div>
         <span class="text-base font-bold text-slate-800 dark:text-white"
-            >Glacier</span
+            >PoseFix</span
         >
     </div>
 
@@ -216,7 +216,7 @@
                     <h1
                         class="text-2xl font-bold text-slate-900 dark:text-white mb-2"
                     >
-                        Welcome to Glacier
+                        Welcome to PoseFix
                     </h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
                         Let's set up your profile to optimize your workspace
@@ -387,7 +387,7 @@
                         Connect Your Hardware
                     </h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
-                        Glacier syncs with your devices to monitor posture in
+                        PoseFix syncs with your devices to monitor posture in
                         real-time.
                     </p>
                 </div>
@@ -525,7 +525,7 @@
                         Your Preferences
                     </h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
-                        Customize how Glacier works for you.
+                        Customize how PoseFix works for you.
                     </p>
                 </div>
 

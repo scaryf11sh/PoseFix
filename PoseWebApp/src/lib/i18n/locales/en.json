@@ -60,12 +60,12 @@
         }
     },
     "onboarding": {
-        "welcome": "Welcome to Glacier",
+        "welcome": "Welcome to PoseFix",
         "welcomeTagline": "Let's set up your profile to optimize your workspace posture.",
         "connectHardware": "Connect Your Hardware",
-        "connectTagline": "Glacier syncs with your devices to monitor posture in real-time.",
+        "connectTagline": "PoseFix syncs with your devices to monitor posture in real-time.",
         "preferences": "Your Preferences",
-        "preferencesTagline": "Customize how Glacier works for you.",
+        "preferencesTagline": "Customize how PoseFix works for you.",
         "stepOf": "Step {current} of {total}",
         "identity": "Establishing your basic identity",
         "connecting": "Connecting your hardware devices",

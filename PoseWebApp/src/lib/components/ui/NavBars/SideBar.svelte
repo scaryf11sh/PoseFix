@@ -107,24 +107,21 @@
                     : 'hover:bg-gray-200/50 dark:hover:bg-gray-800/50 text-deep-twilight-900/50 dark:text-frozen-lake-200/50 hover:translate-x-3'}"
             >
                 <!-- Avatar -->
-                <div class="p-[1.5px] rounded-full bg-jade-green-400 shrink-0">
-                    <div class="p-px rounded-full dark:bg-slate-950/75">
-                        <div
-                            class="rounded-full size-7 overflow-hidden bg-linear-to-br from-sky-400 to-blue-600 flex items-center justify-center"
+                <div
+                    class="w-6 h-6 rounded-full shrink-0 ring-1 ring-sky-400/50 overflow-hidden bg-linear-to-br from-sky-400 to-blue-600 flex items-center justify-center"
+                >
+                    {#if $userStore.avatarUrl}
+                        <img
+                            src={$userStore.avatarUrl}
+                            alt="Profile"
+                            class="w-full h-full object-cover"
+                        />
+                    {:else}
+                        <span
+                            class="text-[8px] font-bold text-white leading-none"
+                            >{initials}</span
                         >
-                            {#if $userStore.avatarUrl}
-                                <img
-                                    src={$userStore.avatarUrl}
-                                    alt="Profile"
-                                    class="w-full h-full object-cover"
-                                />
-                            {:else}
-                                <span class="text-[10px] font-bold text-white"
-                                    >{initials}</span
-                                >
-                            {/if}
-                        </div>
-                    </div>
+                    {/if}
                 </div>
                 <span class="flex-1 cursor-pointer">{$_("nav.account")}</span>
             </a>

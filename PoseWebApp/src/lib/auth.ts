@@ -59,19 +59,30 @@ export async function registerUser(data: {
 // ─────────────────────────────────────────────
 
 export async function loginUser(data: {
-    email: string;
+    emailOrUsername: string;
     password: string;
-}): Promise<{ success: true; user: User } | { success: false; error: "invalid_credentials" }> {
+}): Promise<{ success: true; user: User } | { success: false; error: "invalid_credentials" | "no_password" }> {
     const database = await getDb();
-    const hash = await hashPassword(data.password);
+    const id = data.emailOrUsername.trim();
 
-    const rows = await database.select<User[]>(
-        "SELECT * FROM users WHERE email = $1 AND password_hash = $2",
-        [data.email, hash]
+    // Primero busca el usuario por email o username (sin verificar password aún)
+    const userRows = await database.select<User[]>(
+        "SELECT * FROM users WHERE email = $1 OR username = $1",
+        [id]
     );
 
-    if (rows.length === 0) return { success: false, error: "invalid_credentials" };
-    return { success: true, user: rows[0] };
+    if (userRows.length === 0) return { success: false, error: "invalid_credentials" };
+
+    const user = userRows[0];
+
+    // Si no tiene password_hash, el usuario fue creado sin contraseña (antes de auth)
+    if (!(user as any).password_hash) return { success: false, error: "no_password" };
+
+    // Verifica la contraseña
+    const hash = await hashPassword(data.password);
+    if ((user as any).password_hash !== hash) return { success: false, error: "invalid_credentials" };
+
+    return { success: true, user };
 }
 
 // ─────────────────────────────────────────────
