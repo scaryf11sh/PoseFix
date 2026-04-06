@@ -14,7 +14,8 @@
         "search": "Search",
         "filter": "Filters",
         "export": "Export Report",
-        "or": "or"
+        "or": "or",
+        "cancel_edit": "Cancel Edit"
     },
     "nav": {
         "dashboard": "Dashboard",
@@ -250,7 +251,18 @@
         "dangerZone": "Danger Zone",
         "dangerDesc": "Once you delete your account, there is no going back. Please be certain.",
         "deleteAccount": "Delete My Account",
-        "noUser": "No user found. Complete onboarding first."
+        "noUser": "No user found. Complete onboarding first.",
+        "personal_info": "Personal Information",
+        "full_name": "Full Name",
+        "avg_score": "Avg. Posture Score",
+        "password_sub": "Update password",
+        "two_factor": "Two-Factor Auth",
+        "two_factor_sub": "Enabled",
+        "notif_sub": "Push and Email",
+        "danger_zone": "Danger Zone",
+        "danger_desc": "Once you delete your account, there is no going back. Please be certain.",
+        "delete_account": "Delete My Account",
+        "no_user": "No user found. Complete onboarding first."
     },
     "settings": {
         "title": "System Configuration",
@@ -301,7 +313,13 @@
             "offline": "OFFLINE",
             "active": "ACTIVE DEVICE",
             "standby": "STANDBY"
-        }
+        },
+        "check_updates": "Check for Updates",
+        "last_backup": "Last backup: {time}",
+        "system_theme": "Following your OS preference",
+        "setup_sub": "Re-run the initial configuration flow",
+        "configure_ai": "Configure AI Neural Link",
+        "posture_goal": "Posture Goal"
     },
     "theme": {
         "light": "Light",

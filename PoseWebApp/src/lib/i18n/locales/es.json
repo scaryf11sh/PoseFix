@@ -14,7 +14,8 @@
         "search": "Buscar",
         "filter": "Filtros",
         "export": "Exportar Reporte",
-        "or": "o"
+        "or": "o",
+        "cancel_edit": "Cancelar Edición"
     },
     "nav": {
         "dashboard": "Panel",
@@ -250,7 +251,18 @@
         "dangerZone": "Zona de Peligro",
         "dangerDesc": "Una vez que elimines tu cuenta, no hay vuelta atrás. Por favor, asegúrate.",
         "deleteAccount": "Eliminar Mi Cuenta",
-        "noUser": "No se encontró usuario. Completa el onboarding primero."
+        "noUser": "No se encontró usuario. Completa el onboarding primero.",
+        "personal_info": "Información Personal",
+        "full_name": "Nombre Completo",
+        "avg_score": "Puntuación Media de Postura",
+        "password_sub": "Actualizar contraseña",
+        "two_factor": "Autenticación de Dos Factores",
+        "two_factor_sub": "Habilitada",
+        "notif_sub": "Push y Correo",
+        "danger_zone": "Zona de Peligro",
+        "danger_desc": "Una vez que elimines tu cuenta, no hay vuelta atrás. Por favor, asegúrate.",
+        "delete_account": "Eliminar Mi Cuenta",
+        "no_user": "No se encontró usuario. Completa el onboarding primero."
     },
     "settings": {
         "title": "Configuración del Sistema",
@@ -301,7 +313,13 @@
             "offline": "DESCONECTADO",
             "active": "DISPOSITIVO ACTIVO",
             "standby": "EN ESPERA"
-        }
+        },
+        "check_updates": "Buscar Actualizaciones",
+        "last_backup": "Último respaldo: {time}",
+        "system_theme": "Siguiendo la preferencia de tu sistema operativo",
+        "setup_sub": "Volver a ejecutar el flujo de configuración inicial",
+        "configure_ai": "Configurar Enlace Neural IA",
+        "posture_goal": "Meta de Postura"
     },
     "theme": {
         "light": "Claro",
