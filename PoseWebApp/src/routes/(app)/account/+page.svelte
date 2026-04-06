@@ -258,7 +258,7 @@
                         />
                     {:else}
                         <div
-                            class="w-24 h-24 rounded-full bg-gradient-to-br from-sky-400 to-blue-600
+                            class="w-24 h-24 rounded-full bg-linear-to-br from-sky-400 to-blue-600
                             flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-sky-400/20"
                         >
                             {initials}
@@ -362,6 +362,7 @@
                     <!-- Username -->
                     <div class="col-span-2">
                         <label
+                            for="username_input"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                         >
                             Username
@@ -372,6 +373,7 @@
                                 >@</span
                             >
                             <input
+                                id="username_input"
                                 type="text"
                                 bind:value={username}
                                 oninput={() => {
@@ -402,10 +404,12 @@
                     <!-- Full Name -->
                     <div>
                         <label
+                            for="full_name_input"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                             >{$_("account.full_name")}</label
                         >
                         <input
+                            id="full_name_input"
                             type="text"
                             bind:value={fullName}
                             placeholder="John Doe"
@@ -420,10 +424,12 @@
                     <!-- Email (read-only) -->
                     <div>
                         <label
+                            for="email_input"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                             >{$_("account.email")}</label
                         >
                         <input
+                            id="email_input"
                             type="email"
                             value={email}
                             disabled
@@ -436,10 +442,12 @@
                     <!-- Profession -->
                     <div>
                         <label
+                            for="profession_input"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                             >{$_("account.profession")}</label
                         >
                         <input
+                            id="profession_input"
                             type="text"
                             bind:value={profession}
                             placeholder="Engineer"
@@ -454,10 +462,12 @@
                     <!-- Age -->
                     <div>
                         <label
+                            for="age_input"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                             >{$_("account.age")}</label
                         >
                         <input
+                            id="age_input"
                             type="number"
                             bind:value={age}
                             placeholder="25"
@@ -538,7 +548,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {#each securityItems as item}
                     <a
-                        href={item.href}
+                        href={item.href}    
                         class="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800
                             border border-slate-100 dark:border-slate-700 hover:border-sky-300 dark:hover:border-sky-700
                             text-left transition-all group cursor-pointer"

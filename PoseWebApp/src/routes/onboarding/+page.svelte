@@ -1,12 +1,14 @@
 <script lang="ts">
     import { theme, type ThemeMode } from "$lib/stores/theme";
     import { goto } from "$app/navigation";
+    import { _ } from "svelte-i18n";
 
     // --- Step ---
     let step = $state(1);
     const totalSteps = 3;
 
     // --- Step 1: Profile ---
+    let username = $state("");
     let fullName = $state("");
     let email = $state("");
     let profession = $state("");
@@ -128,7 +130,7 @@
     <!-- Background glow -->
     <div
         class="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2
-        w-[600px] h-[400px] rounded-full
+        w-150 h-100 rounded-full
         bg-sky-400/5 dark:bg-sky-400/10
         blur-[120px] pointer-events-none"
     ></div>
@@ -252,6 +254,7 @@
                     <!-- Username -->
                     <div>
                         <label
+                            for="username_input"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                             >{$_("onboarding.username")}</label
                         >
@@ -269,6 +272,7 @@
                                 /><circle cx="12" cy="7" r="4" />
                             </svg>
                             <input
+                                id="username_input"
                                 type="text"
                                 bind:value={username}
                                 placeholder="e.g. johndoe92"
@@ -287,6 +291,7 @@
                     <!-- Full name -->
                     <div>
                         <label
+                            for="ob_full_name_input"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                             >{$_("auth.full_name")}</label
                         >
@@ -304,6 +309,7 @@
                                 /><circle cx="12" cy="7" r="4" />
                             </svg>
                             <input
+                                id="ob_full_name_input"
                                 type="text"
                                 bind:value={fullName}
                                 placeholder="John Doe"
@@ -319,54 +325,56 @@
                     <div>
                         <label
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                            >{$_("onboarding.profession")}</label
+                            for="ob_profession_input"
                         >
-                        <div class="relative">
-                            <svg
-                                class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <rect
-                                    x="2"
-                                    y="7"
-                                    width="20"
-                                    height="14"
-                                    rx="2"
-                                /><path
-                                    d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"
-                                />
-                            </svg>
-                            <select
-                                bind:value={profession}
-                                class="w-full appearance-none pl-10 pr-8 py-3 rounded-xl text-sm
+                            <div class="relative">
+                                <svg
+                                    class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <rect
+                                        x="2"
+                                        y="7"
+                                        width="20"
+                                        height="14"
+                                        rx="2"
+                                    /><path
+                                        d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"
+                                    />
+                                </svg>
+                                <select
+                                    id="ob_profession_input"
+                                    bind:value={profession}
+                                    class="w-full appearance-none pl-10 pr-8 py-3 rounded-xl text-sm
                                     bg-slate-50 dark:bg-slate-800
                                     border border-slate-200 dark:border-slate-700
                                     text-slate-800 dark:text-white
                                     focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all
                                     {profession === '' ? 'text-slate-400' : ''}"
-                            >
-                                <option value="" disabled selected
-                                    >Select your field</option
                                 >
-                                {#each professions as p}
-                                    <option value={p}>{p}</option>
-                                {/each}
-                            </select>
-                            <svg
-                                class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <polyline points="6 9 12 15 18 9" />
-                            </svg>
-                        </div>
+                                    <option value="" disabled selected
+                                        >Select your field</option
+                                    >
+                                    {#each professions as p}
+                                        <option value={p}>{p}</option>
+                                    {/each}
+                                </select>
+                                <svg
+                                    class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <polyline points="6 9 12 15 18 9" />
+                                </svg>
+                            </div>
+                        </label>
                     </div>
                 </div>
 
@@ -387,6 +395,7 @@
                 <!-- Primary Camera -->
                 <div class="mb-5">
                     <label
+                        for="ob_camera_input"
                         class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2"
                         >Primary Camera</label
                     >
@@ -442,6 +451,7 @@
                 <div>
                     <div class="flex items-center justify-between mb-2">
                         <label
+                            for="ob_sensors_input"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400"
                             >Active Sensors</label
                         >
@@ -462,7 +472,7 @@
                                 border border-slate-100 dark:border-slate-700"
                             >
                                 <div
-                                    class="w-9 h-9 rounded-xl {s.iconColor} flex items-center justify-center flex-shrink-0"
+                                    class="w-9 h-9 rounded-xl {s.iconColor} flex items-center justify-center shrink-0"
                                 >
                                     <svg
                                         xmlns="http://www.w3.org/2000/svg"
@@ -486,8 +496,9 @@
                                     </p>
                                 </div>
                                 <button
+                                    aria-label=""
                                     onclick={() => (s.enabled = !s.enabled)}
-                                    class="relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0
+                                    class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0
                                         {s.enabled
                                         ? 'bg-sky-400'
                                         : 'bg-slate-200 dark:bg-slate-600'}"
@@ -527,7 +538,7 @@
                             border border-slate-100 dark:border-slate-700"
                         >
                             <div
-                                class="w-9 h-9 rounded-xl bg-sky-400/10 flex items-center justify-center flex-shrink-0 text-sky-400"
+                                class="w-9 h-9 rounded-xl bg-sky-400/10 flex items-center justify-center shrink-0 text-sky-400"
                             >
                                 <svg
                                     xmlns="http://www.w3.org/2000/svg"
@@ -550,7 +561,7 @@
                             </div>
                             <button
                                 onclick={() => (p.enabled = !p.enabled)}
-                                class="relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0
+                                class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0
                                     {p.enabled
                                     ? 'bg-sky-400'
                                     : 'bg-slate-200 dark:bg-slate-600'}"

@@ -108,7 +108,7 @@
             >
                 <!-- Avatar -->
                 <div class="p-[1.5px] rounded-full bg-jade-green-400 shrink-0">
-                    <div class="p-[1px] rounded-full dark:bg-slate-950/75">
+                    <div class="p-px rounded-full dark:bg-slate-950/75">
                         <div
                             class="rounded-full size-7 overflow-hidden bg-linear-to-br from-sky-400 to-blue-600 flex items-center justify-center"
                         >

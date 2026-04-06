@@ -190,12 +190,24 @@
 <!-- Backdrop -->
 <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    role="button"
+    tabindex="0"
+    aria-label="Close modal backdrop"
     onclick={(e) => {
         if (e.target === e.currentTarget) oncancel();
     }}
+    onkeydown={(e) => {
+        if (
+            e.target === e.currentTarget &&
+            (e.key === "Enter" || e.key === " ")
+        ) {
+            e.preventDefault();
+            oncancel();
+        }
+    }}
 >
     <div
-        class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl p-6 flex flex-col items-center gap-5 w-[360px]
+        class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl p-6 flex flex-col items-center gap-5 w-90
         border border-slate-100 dark:border-slate-800"
     >
         <!-- Header -->

@@ -139,6 +139,7 @@
                 <!-- Current Password -->
                 <div>
                     <label
+                        for="current_password_input"
                         class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                         >Current Password</label
                     >
@@ -147,6 +148,7 @@
                             class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
                         />
                         <input
+                            id="current_password_input"
                             type={showOld ? "text" : "password"}
                             bind:value={oldPassword}
                             placeholder="••••••••"
@@ -176,6 +178,7 @@
                 <!-- New Password -->
                 <div>
                     <label
+                        for="new_password_input"
                         class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                         >New Password</label
                     >
@@ -184,6 +187,7 @@
                             class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
                         />
                         <input
+                            id="new_password_input"
                             type={showNew ? "text" : "password"}
                             bind:value={newPassword}
                             placeholder="••••••••"
@@ -213,6 +217,7 @@
                 <!-- Confirm Password -->
                 <div>
                     <label
+                        for="confirm_password_input"
                         class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                         >Confirm New Password</label
                     >
@@ -221,6 +226,7 @@
                             class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
                         />
                         <input
+                            id="confirm_password_input"
                             type={showConfirm ? "text" : "password"}
                             bind:value={confirmPass}
                             placeholder="••••••••"

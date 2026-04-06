@@ -176,6 +176,7 @@
 
                     <div class="mb-5">
                         <label
+                            for="confirm-info"
                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                         >
                             Type <span class="text-red-400 font-mono"
@@ -183,6 +184,7 @@
                             > to confirm
                         </label>
                         <input
+                            id="confirm-info"
                             type="text"
                             bind:value={inputVal}
                             placeholder={confirmWord}

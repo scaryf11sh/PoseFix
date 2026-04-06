@@ -161,6 +161,7 @@
                         </p>
                     </div>
                     <button
+                        aria-label={notifs[item.key] ? "Disable" : "Enable"}
                         onclick={() => (notifs[item.key] = !notifs[item.key])}
                         class="relative w-12 h-6 rounded-full transition-colors duration-200 shrink-0 cursor-pointer
                             {notifs[item.key]
