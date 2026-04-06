@@ -1,6 +1,19 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { goto } from "$app/navigation";
     import { LineChart, defaultChartPadding } from "layerchart";
+    import { _ } from "svelte-i18n";
+    import {
+        VideoOff,
+        Video,
+        ChevronLeft,
+        ChevronRight,
+        PlusCircle,
+        Circle,
+    } from "@lucide/svelte";
+    import { getCurrentUser } from "$lib/auth";
+    import { userStore } from "$lib/stores/user";
+    import { getActiveSession, startSession } from "$lib/db";
 
     // --- Latency / status ---
     let latency = $state(0.04);
@@ -9,6 +22,7 @@
     let gazeStatus = $state("Focused");
     let fatigueScore = $state(12);
     let irritationLevel = $state<"LOW" | "MEDIUM" | "HIGH">("LOW");
+    let activeSessionId = $state<number | null>(null);
 
     // --- Fatigue sparkline ---
     type DataPoint = { x: number; value: number };
@@ -38,7 +52,7 @@
         {
             id: "CAM-003",
             label: "External Wide",
-            sub: "Disconnected",
+            sub: $_("monitor.disconnected"),
             connected: false,
             enabled: false,
         },
@@ -58,7 +72,6 @@
         }
     });
 
-    // 5. Funciones de navegación (Carrusel infinito)
     function nextCam() {
         if (activeCams > 0) {
             currentCamIndex = (currentCamIndex + 1) % activeCams;
@@ -71,7 +84,6 @@
         }
     }
 
-    // Auto-reset view if cameras change
     $effect(() => {
         if (activeCams <= 1 && viewMode !== "single") viewMode = "single";
     });
@@ -134,6 +146,12 @@
         },
     ]);
 
+    function sensorStatusLabel(s: SensorStatus): string {
+        if (s === "STABLE") return $_("monitor.stable");
+        if (s === "NOMINAL") return $_("monitor.nominal");
+        return $_("monitor.warning");
+    }
+
     function statusStyle(s: SensorStatus) {
         if (s === "STABLE")
             return "text-sky-400 border-sky-400/30 bg-sky-400/10";
@@ -149,19 +167,36 @@
     }
 
     // --- Live simulation ---
-    onMount(() => {
+    onMount(async () => {
+        const user = await getCurrentUser();
+        if (!user) {
+            goto("/auth");
+            return;
+        }
+        if (!$userStore.user) userStore.setUser(user);
+
+        // Check for or start active session
+        try {
+            let active = await getActiveSession(user.id);
+            if (!active) {
+                activeSessionId = await startSession(user.id);
+            } else {
+                activeSessionId = active.id;
+            }
+        } catch (e) {
+            console.error("Failed to init session:", e);
+        }
+
         const interval = setInterval(() => {
             latency = parseFloat((0.02 + Math.random() * 0.05).toFixed(2));
             blinks = Math.round(12 + Math.random() * 5);
             fatigueScore = Math.round(8 + Math.random() * 15);
 
-            // update sparkline
             fatigueHistory = [
                 ...fatigueHistory.slice(1),
                 { x: fatigueHistory.length, value: fatigueScore },
             ];
 
-            // nudge sensor values
             sensors = sensors.map((s) => {
                 if (s.id === "01" || s.id === "02") {
                     const nudge = () =>
@@ -185,10 +220,10 @@
     <div class="flex items-center justify-between mb-5">
         <div>
             <h1 class="text-2xl font-bold text-slate-900 dark:text-white">
-                Ergonomic Engine <span class="text-sky-400">v2.4</span>
+                {$_("monitor.title")} <span class="text-sky-400">v2.4</span>
             </h1>
             <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                Real-time posture monitoring and environmental telemetry.
+                {$_("monitor.subtitle")}
             </p>
         </div>
         <div
@@ -198,18 +233,18 @@
                 <span
                     class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"
                 ></span>
-                {latency}MS LATENCY
+                {$_("monitor.latency", { values: { ms: latency } })}
             </span>
             <span class="text-slate-600 dark:text-slate-600">•</span>
             <span class="flex items-center gap-1.5">
                 <span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"
                 ></span>
-                NEURAL CORE ACTIVE
+                {$_("monitor.neuralActive")}
             </span>
         </div>
     </div>
 
-    <!-- Top row: AI Metrics | Camera Signals | Camera Monitor -->
+    <!-- Top row: Camera Monitor | Camera Signals + AI Metrics -->
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
         <!-- Camera Monitor -->
         <div
@@ -222,14 +257,14 @@
                     <h2
                         class="text-xs font-bold uppercase tracking-widest text-sky-400"
                     >
-                        Camera Monitor
+                        {$_("monitor.cameraMonitor")}
                     </h2>
                 </div>
                 <!-- View mode buttons -->
                 <div
                     class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5"
                 >
-                    {#each [["single", "Single"], ["2x2", "2×2"], ["3x3", "3×3"]] as [mode, label]}
+                    {#each [["single", $_("monitor.singleView")], ["2x2", "2×2"], ["3x3", "3×3"]] as [mode, label]}
                         {@const disabled =
                             (activeCams <= 1 && mode !== "single") ||
                             (activeCams <= 4 && mode === "3x3") ||
@@ -254,32 +289,14 @@
 
             <!-- Feed -->
             <div
-                class="rounded-xl overflow-hidden bg-slate-900 dark:bg-slate-950 relative
-                    {viewMode === 'single'
-                    ? 'h-full'
-                    : viewMode === '2x2'
-                      ? 'h-full'
-                      : 'h-full'}
-                    transition-all duration-300"
+                class="rounded-xl overflow-hidden bg-slate-900 dark:bg-slate-950 relative flex-1 min-h-[200px] transition-all duration-300"
             >
                 {#if activeCams === 0}
                     <div
                         class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-500"
                     >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="w-8 h-8"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                        >
-                            <line x1="1" y1="1" x2="23" y2="23" />
-                            <path
-                                d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34"
-                            />
-                        </svg>
-                        <p class="text-xs">No cameras connected</p>
+                        <VideoOff class="w-8 h-8" />
+                        <p class="text-xs">{$_("monitor.noCamera")}</p>
                     </div>
                 {:else if viewMode === "single"}
                     <div
@@ -292,25 +309,12 @@
                                 <div
                                     class="w-16 h-16 rounded-full bg-slate-700/50 flex items-center justify-center mx-auto mb-2"
                                 >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
+                                    <Video
                                         class="w-8 h-8 text-sky-400/50"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="1.5"
-                                    >
-                                        <path d="M23 7l-7 5 7 5V7z" /><rect
-                                            x="1"
-                                            y="5"
-                                            width="15"
-                                            height="14"
-                                            rx="2"
-                                        />
-                                    </svg>
+                                    />
                                 </div>
                                 <p class="text-[10px] text-slate-500 font-mono">
-                                    LIVE FEED ACTIVE: {currentCam?.id}
+                                    {$_("monitor.live")} • {currentCam?.id}
                                 </p>
                             </div>
                         </div>
@@ -325,7 +329,7 @@
                         <span
                             class="text-[9px] text-white font-bold uppercase tracking-wider"
                         >
-                            Live • {currentCam?.label ?? "—"}
+                            {$_("monitor.live")} • {currentCam?.label ?? "—"}
                         </span>
                     </div>
 
@@ -333,36 +337,18 @@
                         onclick={prevCam}
                         class="absolute top-1/2 left-5 hover:bg-black/50 backdrop-blur-sm p-2 rounded-full cursor-pointer z-20"
                     >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="w-6 h-6 text-white"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        >
-                            <path d="M15 18l-6-6 6-6" />
-                        </svg>
+                        <ChevronLeft class="w-6 h-6 text-white" />
                     </button>
 
                     <button
                         onclick={nextCam}
                         class="absolute top-1/2 right-5 hover:bg-black/50 backdrop-blur-sm p-2 rounded-full cursor-pointer z-20"
                     >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="w-6 h-6 text-white"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        >
-                            <path d="M9 18l6-6-6-6" />
-                        </svg>
+                        <ChevronRight class="w-6 h-6 text-white" />
                     </button>
                 {:else}
                     <!-- Grid feed -->
-                    {@const activeCams = cameras.filter(
+                    {@const activeCamsList = cameras.filter(
                         (c) => c.connected && c.enabled,
                     )}
                     {@const cols = viewMode === "2x2" ? 2 : 3}
@@ -371,46 +357,21 @@
                         style="grid-template-columns: repeat({cols}, 1fr)"
                     >
                         {#each Array.from({ length: cols * cols }) as _, idx}
-                            {@const cam = activeCams[idx]}
+                            {@const cam = activeCamsList[idx]}
                             <div
                                 class="relative bg-slate-800 flex items-center justify-center"
                             >
                                 {#if cam}
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
+                                    <Video
                                         class="w-5 h-5 text-sky-400/30"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="1.5"
-                                    >
-                                        <path d="M23 7l-7 5 7 5V7z" /><rect
-                                            x="1"
-                                            y="5"
-                                            width="15"
-                                            height="14"
-                                            rx="2"
-                                        />
-                                    </svg>
+                                    />
                                     <div
                                         class="absolute bottom-1 left-1 text-[8px] text-white/50 font-mono"
                                     >
                                         {cam.id}
                                     </div>
                                 {:else}
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        class="w-4 h-4 text-slate-600"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="1.5"
-                                    >
-                                        <line x1="1" y1="1" x2="23" y2="23" />
-                                        <path
-                                            d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34"
-                                        />
-                                    </svg>
+                                    <VideoOff class="w-4 h-4 text-slate-600" />
                                 {/if}
                             </div>
                         {/each}
@@ -419,7 +380,7 @@
             </div>
         </div>
 
-        <!-- Right column: Camera Signals + Camera Monitor -->
+        <!-- Right column: Camera Signals + Real-Time AI Metrics -->
         <div class="lg:col-span-2 flex flex-col gap-4">
             <!-- Camera Signals -->
             <div
@@ -431,7 +392,7 @@
                     <h2
                         class="text-xs font-bold uppercase tracking-widest text-sky-400"
                     >
-                        Camera Signals
+                        {$_("monitor.cameraSignals")}
                     </h2>
                 </div>
 
@@ -490,22 +451,8 @@
                     text-xs font-medium text-slate-600 dark:text-slate-300
                     hover:border-sky-400 hover:text-sky-400 transition-all"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-3.5 h-3.5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <circle cx="12" cy="12" r="10" /><line
-                            x1="12"
-                            y1="8"
-                            x2="12"
-                            y2="16"
-                        /><line x1="8" y1="12" x2="16" y2="12" />
-                    </svg>
-                    Register New Node
+                    <PlusCircle class="w-3.5 h-3.5" />
+                    {$_("monitor.registerNode")}
                 </button>
             </div>
 
@@ -519,7 +466,7 @@
                     <h2
                         class="text-xs font-bold uppercase tracking-widest text-sky-400"
                     >
-                        Real-Time AI Metrics
+                        {$_("monitor.aiMetrics")}
                     </h2>
                 </div>
 
@@ -548,7 +495,7 @@
                             <p
                                 class="text-xs text-slate-400 uppercase tracking-wider mb-1"
                             >
-                                Posture Detection
+                                {$_("monitor.postureDetection")}
                             </p>
                             <p
                                 class="text-lg font-bold
@@ -582,13 +529,13 @@
                         <p
                             class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4"
                         >
-                            Eye Health Metrics
+                            {$_("monitor.eyeHealth")}
                         </p>
                         <div class="space-y-3">
                             <div class="flex justify-between items-center">
                                 <span
                                     class="text-xs text-slate-500 dark:text-slate-400"
-                                    >Irritation Level</span
+                                    >{$_("monitor.irritation")}</span
                                 >
                                 <span
                                     class="text-xs font-bold {irritationStyle(
@@ -599,7 +546,7 @@
                             <div class="flex justify-between items-center">
                                 <span
                                     class="text-xs text-slate-500 dark:text-slate-400"
-                                    >Blinks Per Minute</span
+                                    >{$_("monitor.blinks")}</span
                                 >
                                 <span
                                     class="text-xs font-bold text-slate-700 dark:text-white tabular-nums"
@@ -613,10 +560,10 @@
                             <div class="flex justify-between items-center">
                                 <span
                                     class="text-xs text-slate-500 dark:text-slate-400"
-                                    >Gaze Status</span
+                                    >{$_("monitor.gaze")}</span
                                 >
                                 <span class="text-xs font-bold text-green-400"
-                                    >{gazeStatus}</span
+                                    >{$_("monitor.focused")}</span
                                 >
                             </div>
                         </div>
@@ -629,7 +576,7 @@
                         <p
                             class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2"
                         >
-                            Fatigue Score
+                            {$_("monitor.fatigue")}
                         </p>
                         <div>
                             <p
@@ -673,17 +620,17 @@
                 <h2
                     class="text-xs font-bold uppercase tracking-widest text-sky-400"
                 >
-                    Sensor Telemetry Cluster
+                    {$_("monitor.telemetry")}
                 </h2>
             </div>
             <div class="flex items-center gap-3 text-xs text-slate-400">
                 <span class="flex items-center gap-1.5"
                     ><span class="w-2 h-2 rounded-full bg-red-400"
-                    ></span>Environmental</span
+                    ></span>{$_("monitor.environmental")}</span
                 >
                 <span class="flex items-center gap-1.5"
                     ><span class="w-2 h-2 rounded-full bg-sky-400"
-                    ></span>Kinetic</span
+                    ></span>{$_("monitor.kinetic")}</span
                 >
             </div>
         </div>
@@ -692,7 +639,7 @@
             <table class="w-full">
                 <thead>
                     <tr class="border-b border-slate-100 dark:border-slate-800">
-                        {#each ["Sensor Node", "Status", "", "", "", "Data Stream"] as col}
+                        {#each [$_("monitor.sensorNode"), $_("monitor.status"), "", "", "", $_("monitor.dataStream")] as col}
                             <th
                                 class="text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 pb-3 pr-4 first:pr-8"
                                 >{col}</th
@@ -710,18 +657,7 @@
                                     <div
                                         class="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sky-400"
                                     >
-                                        <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            class="w-3.5 h-3.5"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="2"
-                                        >
-                                            <path
-                                                d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"
-                                            /><path d="M12 8v4l3 3" />
-                                        </svg>
+                                        <Circle class="w-3.5 h-3.5" />
                                     </div>
                                     <div>
                                         <span
@@ -739,7 +675,7 @@
                                 <span
                                     class="text-xs font-bold px-2.5 py-1 rounded-md border {statusStyle(
                                         s.status,
-                                    )}">{s.status}</span
+                                    )}">{sensorStatusLabel(s.status)}</span
                                 >
                             </td>
                             <td class="py-3.5 pr-4">
@@ -779,7 +715,6 @@
                                 </p>
                             </td>
                             <td class="py-3.5">
-                                <!-- Animated data stream bar -->
                                 <div
                                     class="w-24 h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden"
                                 >

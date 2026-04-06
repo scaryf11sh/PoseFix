@@ -1,7 +1,30 @@
 <script lang="ts">
+    import { onMount } from "svelte";
+    import { goto } from "$app/navigation";
+    import { _ } from "svelte-i18n";
+    import {
+        Calendar,
+        List,
+        FileText,
+        Download,
+        Lock,
+        Activity,
+        CheckCircle,
+        Loader,
+    } from "@lucide/svelte";
+    import { getCurrentUser } from "$lib/auth";
+    import { getSessionCountInRange } from "$lib/db";
+
+    let userId = $state(0);
+
     // --- Date Range ---
-    let startDate = $state("2023-10-12");
-    let endDate = $state("2023-10-26");
+    let startDate = $state(
+        new Date(new Date().setDate(new Date().getDate() - 7))
+            .toISOString()
+            .split("T")[0],
+    );
+    let endDate = $state(new Date().toISOString().split("T")[0]);
+    let sessionCountInRange = $state(0);
 
     function setRange(days: number | "ytd") {
         const end = new Date();
@@ -23,12 +46,37 @@
         return Math.max(1, Math.round((b.getTime() - a.getTime()) / 86400000));
     }
 
+    // Update session count when dates change
+    $effect(() => {
+        if (userId && startDate && endDate) {
+            getSessionCountInRange(userId, startDate, endDate)
+                .then((c) => (sessionCountInRange = c))
+                .catch(() => {});
+        }
+    });
+
     // --- Categories ---
     let categories = $state([
-        { id: "posture", label: "Posture Scores", enabled: true },
-        { id: "eye", label: "Eye Health Metrics", enabled: true },
-        { id: "sensor", label: "Sensor Telemetry", enabled: false },
-        { id: "exercise", label: "Exercise History", enabled: true },
+        {
+            id: "posture",
+            label: () => $_("export.categories_list.posture"),
+            enabled: true,
+        },
+        {
+            id: "eye",
+            label: () => $_("export.categories_list.eye"),
+            enabled: true,
+        },
+        {
+            id: "sensor",
+            label: () => $_("export.categories_list.sensor"),
+            enabled: false,
+        },
+        {
+            id: "exercise",
+            label: () => $_("export.categories_list.exercise"),
+            enabled: true,
+        },
     ]);
 
     let activeCount = $derived(categories.filter((c) => c.enabled).length);
@@ -36,28 +84,25 @@
     // --- Format ---
     let selectedFormat = $state<"pdf" | "csv" | "json">("pdf");
 
-    const formats = [
+    const formats = $derived([
         {
-            id: "pdf",
-            label: "PDF Document",
-            sub: "Visual Report Style",
-            icon: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8",
+            id: "pdf" as const,
+            label: $_("export.pdf"),
+            sub: $_("export.pdfSub"),
         },
         {
-            id: "csv",
-            label: "CSV Dataset",
-            sub: "Spreadsheet Compatible",
-            icon: "M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18",
+            id: "csv" as const,
+            label: $_("export.csv"),
+            sub: $_("export.csvSub"),
         },
         {
-            id: "json",
-            label: "JSON API Feed",
-            sub: "Developer Format",
-            icon: "M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3",
+            id: "json" as const,
+            label: $_("export.json"),
+            sub: $_("export.jsonSub"),
         },
-    ] as const;
+    ]);
 
-    // --- Recent exports ---
+    // --- Recent exports (static — no DB table yet) ---
     const recentExports = [
         {
             name: "Posture Analysis Report",
@@ -95,6 +140,15 @@
         generating = true;
         setTimeout(() => (generating = false), 2000);
     }
+
+    onMount(async () => {
+        const user = await getCurrentUser();
+        if (!user) {
+            goto("/auth");
+            return;
+        }
+        userId = user.id;
+    });
 </script>
 
 <div
@@ -103,12 +157,10 @@
     <!-- Header -->
     <div class="mb-6">
         <h1 class="text-2xl font-bold text-slate-900 dark:text-white">
-            Export Data
+            {$_("export.title")}
         </h1>
         <p class="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-xl">
-            Configure your data parameters to generate a detailed analytics
-            report. Choose your time range, specific metrics, and preferred file
-            format.
+            {$_("export.subtitle")}
         </p>
     </div>
 
@@ -122,29 +174,10 @@
                 <div
                     class="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center text-sky-500"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <rect x="3" y="4" width="18" height="18" rx="2" /><line
-                            x1="16"
-                            y1="2"
-                            x2="16"
-                            y2="6"
-                        /><line x1="8" y1="2" x2="8" y2="6" /><line
-                            x1="3"
-                            y1="10"
-                            x2="21"
-                            y2="10"
-                        />
-                    </svg>
+                    <Calendar class="w-4 h-4" />
                 </div>
                 <h2 class="font-semibold text-slate-800 dark:text-white">
-                    Date Range Selection
+                    {$_("export.dateRange")}
                 </h2>
             </div>
 
@@ -152,7 +185,7 @@
                 <div>
                     <label
                         class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                        >Start Date</label
+                        >{$_("export.startDate")}</label
                     >
                     <input
                         type="date"
@@ -168,7 +201,7 @@
                 <div>
                     <label
                         class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
-                        >End Date</label
+                        >{$_("export.endDate")}</label
                     >
                     <input
                         type="date"
@@ -183,8 +216,8 @@
                 </div>
             </div>
 
-            <div class="flex gap-2">
-                {#each [["Last 7 Days", 7], ["Last 30 Days", 30], ["Year to Date", "ytd"]] as [label, val]}
+            <div class="flex gap-2 mb-3">
+                {#each [[$_("export.last7"), 7], [$_("export.last30"), 30], [$_("export.yearToDate"), "ytd"]] as [label, val]}
                     <button
                         onclick={() => setRange(val as number | "ytd")}
                         class="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all
@@ -198,6 +231,16 @@
                     </button>
                 {/each}
             </div>
+
+            {#if sessionCountInRange > 0}
+                <p class="text-xs text-slate-400">
+                    <span class="text-sky-400 font-semibold"
+                        >{sessionCountInRange}</span
+                    > sessions in selected range
+                </p>
+            {:else if userId > 0}
+                <p class="text-xs text-slate-400">No sessions in range</p>
+            {/if}
         </div>
 
         <!-- Data Categories -->
@@ -208,30 +251,10 @@
                 <div
                     class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-purple-500"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <line x1="8" y1="6" x2="21" y2="6" /><line
-                            x1="8"
-                            y1="12"
-                            x2="21"
-                            y2="12"
-                        /><line x1="8" y1="18" x2="21" y2="18" />
-                        <line x1="3" y1="6" x2="3.01" y2="6" /><line
-                            x1="3"
-                            y1="12"
-                            x2="3.01"
-                            y2="12"
-                        /><line x1="3" y1="18" x2="3.01" y2="18" />
-                    </svg>
+                    <List class="w-4 h-4" />
                 </div>
                 <h2 class="font-semibold text-slate-800 dark:text-white">
-                    Data Category Selection
+                    {$_("export.categories")}
                 </h2>
             </div>
 
@@ -242,10 +265,10 @@
                         bg-slate-50 dark:bg-slate-800
                         border border-slate-100 dark:border-slate-700"
                     >
-                        <span class="text-sm text-slate-700 dark:text-slate-200"
-                            >{cat.label}</span
+                        <span
+                            class="text-sm text-slate-700 dark:text-slate-200"
+                            >{cat.label()}</span
                         >
-                        <!-- Toggle -->
                         <button
                             onclick={() => (cat.enabled = !cat.enabled)}
                             class="relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0
@@ -277,21 +300,10 @@
                 <div
                     class="w-7 h-7 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center text-green-500"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path
-                            d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-                        /><polyline points="14 2 14 8 20 8" />
-                    </svg>
+                    <FileText class="w-4 h-4" />
                 </div>
                 <h2 class="font-semibold text-slate-800 dark:text-white">
-                    Export Format
+                    {$_("export.format")}
                 </h2>
             </div>
 
@@ -312,16 +324,7 @@
                                 : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}
                             flex items-center justify-center flex-shrink-0 transition-colors"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="w-4 h-4"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <path d={fmt.icon} />
-                            </svg>
+                            <FileText class="w-4 h-4" />
                         </div>
                         <div class="flex-1">
                             <p
@@ -335,16 +338,7 @@
                             <div
                                 class="w-6 h-6 rounded-full bg-sky-400 flex items-center justify-center flex-shrink-0"
                             >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    class="w-3.5 h-3.5 text-white"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="3"
-                                >
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg>
+                                <CheckCircle class="w-3.5 h-3.5 text-white" />
                             </div>
                         {/if}
                     </button>
@@ -356,21 +350,11 @@
         <div
             class="rounded-2xl bg-slate-900 dark:bg-slate-950 border border-slate-800 shadow-sm p-6 flex flex-col items-center justify-center text-center gap-4"
         >
-            <!-- Glow orb -->
             <div
                 class="relative w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center
                 shadow-[0_0_40px_rgba(56,189,248,0.15)]"
             >
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="w-9 h-9 text-sky-400"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                >
-                    <path
-                        d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"
-                    />
-                </svg>
+                <Activity class="w-9 h-9 text-sky-400" />
                 <div
                     class="absolute inset-0 rounded-full bg-sky-400/10 animate-pulse"
                 ></div>
@@ -378,20 +362,16 @@
 
             <div>
                 <h2 class="text-xl font-bold text-white mb-2">
-                    Ready to compile?
+                    {$_("export.ready")}
                 </h2>
                 <p class="text-sm text-slate-400 max-w-xs">
-                    Your selected parameters include <span
-                        class="text-white font-medium">{daysDiff()} days</span
-                    >
-                    of data with
-                    <span class="text-white font-medium"
-                        >{activeCount} active categories</span
-                    >
-                    in
-                    <span class="text-white font-medium"
-                        >{selectedFormat.toUpperCase()}</span
-                    > format.
+                    {$_("export.readyDesc", {
+                        values: {
+                            days: daysDiff(),
+                            cats: activeCount,
+                            fmt: selectedFormat.toUpperCase(),
+                        },
+                    })}
                 </p>
             </div>
 
@@ -405,57 +385,22 @@
                     transition-all duration-200 active:scale-95"
             >
                 {#if generating}
-                    <svg
-                        class="w-4 h-4 animate-spin"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                    >
-                        <circle
-                            class="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            stroke-width="4"
-                        />
-                        <path
-                            class="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8v8z"
-                        />
-                    </svg>
-                    Generating...
+                    <Loader class="w-4 h-4 animate-spin" />
+                    {$_("export.generating")}
                 {:else}
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path
-                            d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
-                        /><polyline points="7 10 12 15 17 10" /><line
-                            x1="12"
-                            y1="15"
-                            x2="12"
-                            y2="3"
-                        />
-                    </svg>
-                    Generate Export
+                    <Download class="w-4 h-4" />
+                    {$_("export.generate")}
                 {/if}
             </button>
 
             <div class="flex items-center gap-4 text-xs">
                 <div class="flex items-center gap-1.5 text-slate-400">
                     <span class="w-2 h-2 rounded-full bg-green-400"></span>
-                    System Ready
+                    {$_("export.systemReady")}
                 </div>
                 <div class="flex items-center gap-1.5 text-slate-400">
-                    <span class="w-2 h-2 rounded-full bg-sky-400"></span>
-                    128-bit Encryption
+                    <Lock class="w-3 h-3" />
+                    {$_("export.encryption")}
                 </div>
             </div>
         </div>
@@ -470,25 +415,16 @@
                 <div
                     class="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center text-orange-500"
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                    </svg>
+                    <Activity class="w-4 h-4" />
                 </div>
                 <h2 class="font-semibold text-slate-800 dark:text-white">
-                    Recent Exports List
+                    {$_("export.recent")}
                 </h2>
             </div>
             <button
                 class="text-xs font-bold uppercase tracking-widest text-sky-400 hover:text-sky-500 transition-colors"
             >
-                View All History →
+                {$_("export.viewAll")}
             </button>
         </div>
 
@@ -545,35 +481,18 @@
                                         {row.status === 'Completed'
                                             ? 'bg-green-400'
                                             : 'bg-slate-300'}"
-                                    >
-                                    </span>
-                                    {row.status}
+                                    ></span>
+                                    {row.status === "Completed"
+                                        ? $_("export.status.completed")
+                                        : $_("export.status.archived")}
                                 </span>
                             </td>
                             <td class="py-3">
                                 <button
                                     class="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-500 font-medium transition-colors"
                                 >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        class="w-3.5 h-3.5"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
-                                        <path
-                                            d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
-                                        /><polyline
-                                            points="7 10 12 15 17 10"
-                                        /><line
-                                            x1="12"
-                                            y1="15"
-                                            x2="12"
-                                            y2="3"
-                                        />
-                                    </svg>
-                                    Download
+                                    <Download class="w-3.5 h-3.5" />
+                                    {$_("export.download")}
                                 </button>
                             </td>
                         </tr>
