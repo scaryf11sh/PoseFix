@@ -153,7 +153,16 @@
         "stable": "STABLE",
         "nominal": "NOMINAL",
         "warning": "WARNING",
-        "disconnected": "Disconnected"
+        "disconnected": "Disconnected",
+        "noCamerasFound": "No cameras found",
+        "noPermission": "Camera access denied. Allow it in your browser settings.",
+        "requestingAccess": "Requesting camera access...",
+        "landmarksActive": "Pose Tracking Active",
+        "landmarksOffline": "Pose Tracking Offline",
+        "refreshCameras": "Refresh Cameras",
+        "liveData": "Live Data",
+        "dbFallback": "Using historical data",
+        "wsConnecting": "Connecting to pose stream..."
     },
     "exercises": {
         "title": "Exercise Library",
