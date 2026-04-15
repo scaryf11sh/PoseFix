@@ -1,0 +1,53 @@
+{
+  "vision_system": {
+    "model": "yolov8_pose",
+    "description": "Reglas y fórmulas trigonométricas para calcular postura a partir de landmarks 2D."
+  },
+  "constants": {
+    "PI": 3.14159265359
+  },
+  "keypoints_reference": {
+    "nose": 0, "left_eye": 1, "right_eye": 2, "left_ear": 3, "right_ear": 4, "left_shoulder": 5, "right_shoulder": 6
+  },
+  "postural_metrics": [
+    {
+      "id": "head_tilt_roll",
+      "name": "Inclinación Lateral de Cabeza (Roll)",
+      "unit": "degrees",
+      "required_landmarks": ["left_eye", "right_eye"],
+      "formula": "atan2(abs(right_eye_y - left_eye_y), abs(right_eye_x - left_eye_x)) * (180 / PI)",
+      "description": "Calcula el ángulo en grados de la línea que une ambos ojos respecto al eje horizontal X.",
+      "zones": [
+        { "level": "optimal", "range": [0, 5], "status_code": 0 },
+        { "level": "warning", "range": [6, 12], "status_code": 1 },
+        { "level": "critical", "range": [13, 90], "status_code": 2 }
+      ]
+    },
+    {
+      "id": "forward_head_posture",
+      "name": "Cuello Adelantado (Text Neck)",
+      "unit": "ratio",
+      "required_landmarks": ["left_ear", "left_shoulder"],
+      "formula": "abs(left_ear_x - left_shoulder_x) / abs(left_ear_y - left_shoulder_y)",
+      "description": "Mide la relación entre el desplazamiento horizontal y la distancia vertical de la oreja al hombro. Toma el lado izquierdo como referencia si es visible.",
+      "zones": [
+        { "level": "optimal", "range": [0.0, 0.25], "status_code": 0 },
+        { "level": "warning", "range": [0.26, 0.45], "status_code": 1 },
+        { "level": "critical", "range": [0.46, 2.0], "status_code": 2 }
+      ]
+    },
+    {
+      "id": "shoulder_asymmetry",
+      "name": "Asimetría de Hombros (Slouching)",
+      "unit": "ratio",
+      "required_landmarks": ["left_shoulder", "right_shoulder"],
+      "formula": "abs(right_shoulder_y - left_shoulder_y) / sqrt((right_shoulder_x - left_shoulder_x)^2 + (right_shoulder_y - left_shoulder_y)^2)",
+      "description": "Diferencia de altura en Y entre los hombros, dividida por la distancia total entre ellos para hacer la métrica independiente de la distancia a la cámara.",
+      "zones": [
+        { "level": "optimal", "range": [0.0, 0.05], "status_code": 0 },
+        { "level": "warning", "range": [0.06, 0.15], "status_code": 1 },
+        { "level": "critical", "range": [0.16, 1.0], "status_code": 2 }
+      ]
+    }
+  ]
+}
