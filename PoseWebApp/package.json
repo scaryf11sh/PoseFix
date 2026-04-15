@@ -29,6 +29,8 @@
 		"@tauri-apps/plugin-fs": "~2",
 		"@tauri-apps/plugin-sql": "^2.3.2",
 		"clsx": "^2.1.1",
+		"date-fns": "^4.1.0",
+		"jspdf": "^4.2.1",
 		"layerchart": "^1.0.13",
 		"lucide": "^0.577.0",
 		"svelte-i18n": "^4.0.1",
