@@ -2,7 +2,9 @@
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import { onMount } from "svelte";
-    import { _ } from "svelte-i18n";
+    import { _, locale } from "svelte-i18n";
+    import { formatDistanceToNow, format } from "date-fns";
+    import { es, enUS } from "date-fns/locale";
     import {
         ArrowLeft,
         Clock,
@@ -22,14 +24,14 @@
     let warnings = $state<Warning[]>([]);
     let loading = $state(true);
 
+    function dfnsLocale() { return $locale?.startsWith('es') ? es : enUS; }
+
     function formatDate(dateStr: string): string {
         if (!dateStr) return "—";
-        return new Date(dateStr).toLocaleDateString("en-US", {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-            year: "numeric",
-        });
+        const d = new Date(dateStr);
+        const diffDays = (Date.now() - d.getTime()) / 86_400_000;
+        if (diffDays < 7) return formatDistanceToNow(d, { addSuffix: true, locale: dfnsLocale() });
+        return format(d, dfnsLocale() === es ? "EEEE, d 'de' MMMM yyyy" : 'EEEE, MMMM d, yyyy', { locale: dfnsLocale() });
     }
 
     function formatTime(start: string, end?: string): string {

@@ -388,3 +388,173 @@ export async function getExerciseCount(userId: number): Promise<number> {
     );
     return rows[0]?.count ?? 0;
 }
+
+export type ExerciseLogExtended = {
+    id: number;
+    user_id: number;
+    exercise: string;
+    exercise_id?: string;
+    category?: string;
+    difficulty?: string;
+    duration?: number;
+    points: number;
+    source?: string;
+    completed_at: string;
+};
+
+export type ExerciseDailyStat = {
+    day: string;            // 'YYYY-MM-DD'
+    exercise_count: number;
+    total_points: number;
+    total_duration_min: number;
+};
+
+export type ExerciseTotals = {
+    total_exercises: number;
+    total_points: number;
+    best_day_points: number;
+};
+
+function localNow(): string {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+export async function logExerciseWithScore(
+    userId: number,
+    data: {
+        title: string;
+        exercise_id: string;
+        category: string;
+        difficulty?: string;
+        durationVal: number;
+        points: number;
+        source: string;
+    }
+): Promise<void> {
+    const db = await getDb();
+    await db.execute(
+        `INSERT INTO exercises_log (user_id, exercise, exercise_id, category, difficulty, duration, points, source, completed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [userId, data.title, data.exercise_id, data.category, data.difficulty ?? null, data.durationVal, data.points, data.source, localNow()]
+    );
+}
+
+export async function getExerciseDailyStats(userId: number, days = 14): Promise<ExerciseDailyStat[]> {
+    const db = await getDb();
+    return await db.select<ExerciseDailyStat[]>(
+        `SELECT day, exercise_count, total_points, total_duration_min
+         FROM exercise_daily_stats
+         WHERE user_id = $1 AND day >= DATE('now', 'localtime', $2)
+         ORDER BY day ASC`,
+        [userId, `-${days} days`]
+    );
+}
+
+export async function getExerciseTotals(userId: number): Promise<ExerciseTotals> {
+    const db = await getDb();
+    const rows = await db.select<{ total_exercises: number; total_points: number }[]>(
+        `SELECT COUNT(*) as total_exercises, COALESCE(SUM(points), 0) as total_points
+         FROM exercises_log WHERE user_id = $1`,
+        [userId]
+    );
+    const best = await db.select<{ best: number }[]>(
+        `SELECT COALESCE(MAX(total_points), 0) as best FROM exercise_daily_stats WHERE user_id = $1`,
+        [userId]
+    );
+    return {
+        total_exercises: rows[0]?.total_exercises ?? 0,
+        total_points: rows[0]?.total_points ?? 0,
+        best_day_points: best[0]?.best ?? 0,
+    };
+}
+
+export async function getRecentExerciseLogs(userId: number, limit = 8): Promise<ExerciseLogExtended[]> {
+    const db = await getDb();
+    return await db.select<ExerciseLogExtended[]>(
+        `SELECT * FROM exercises_log WHERE user_id = $1 ORDER BY completed_at DESC LIMIT $2`,
+        [userId, limit]
+    );
+}
+
+// ─────────────────────────────────────────────
+// EXPORT
+// ─────────────────────────────────────────────
+
+export type ExportRecord = {
+    id: number;
+    user_id: number;
+    name: string;
+    format: string;
+    categories: string;
+    start_date: string;
+    end_date: string;
+    file_path?: string;
+    created_at: string;
+};
+
+export async function getSessionsInRange(
+    userId: number,
+    startDate: string,
+    endDate: string
+): Promise<UserSession[]> {
+    const db = await getDb();
+    return await db.select<UserSession[]>(
+        `SELECT * FROM user_sessions
+         WHERE user_id = $1
+           AND session_start >= $2
+           AND session_start <= $3 || ' 23:59:59'
+           AND session_end IS NOT NULL
+         ORDER BY session_start ASC`,
+        [userId, startDate, endDate]
+    );
+}
+
+export async function getExercisesInRange(
+    userId: number,
+    startDate: string,
+    endDate: string
+): Promise<ExerciseLogExtended[]> {
+    const db = await getDb();
+    return await db.select<ExerciseLogExtended[]>(
+        `SELECT * FROM exercises_log
+         WHERE user_id = $1
+           AND completed_at >= $2
+           AND completed_at <= $3 || ' 23:59:59'
+         ORDER BY completed_at ASC`,
+        [userId, startDate, endDate]
+    );
+}
+
+export async function saveExportRecord(
+    userId: number,
+    name: string,
+    format: string,
+    categories: string,
+    startDate: string,
+    endDate: string,
+    filePath?: string
+): Promise<number> {
+    const db = await getDb();
+    const result = await db.execute(
+        `INSERT INTO export_history (user_id, name, format, categories, start_date, end_date, file_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [userId, name, format, categories, startDate, endDate, filePath ?? null]
+    );
+    return result.lastInsertId ?? 0;
+}
+
+export async function getExportHistory(
+    userId: number,
+    limit = 10
+): Promise<ExportRecord[]> {
+    const db = await getDb();
+    return await db.select<ExportRecord[]>(
+        `SELECT * FROM export_history
+         WHERE user_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [userId, limit]
+    );
+}

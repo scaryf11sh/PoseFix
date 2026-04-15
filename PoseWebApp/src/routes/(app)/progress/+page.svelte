@@ -1,7 +1,9 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { goto } from "$app/navigation";
-    import { _ } from "svelte-i18n";
+    import { _, locale } from "svelte-i18n";
+    import { formatDistanceToNow, format, isThisYear } from "date-fns";
+    import { es, enUS } from "date-fns/locale";
     import {
         Search,
         Calendar,
@@ -13,16 +15,30 @@
         User,
         AlertTriangle,
         BarChart2,
+        Dumbbell,
+        Star,
+        Trophy,
     } from "@lucide/svelte";
     import { getCurrentUser } from "$lib/auth";
     import {
         getSessionStats,
         getSessionSummaries,
         getSessionCount,
+        getExerciseTotals,
+        getExerciseDailyStats,
+        getRecentExerciseLogs,
     } from "$lib/db";
-    import type { SessionSummary } from "$lib/db";
+    import type { SessionSummary, ExerciseTotals, ExerciseDailyStat, ExerciseLogExtended } from "$lib/db";
+    import ExerciseChart from "$lib/components/ui/Charts/ExerciseChart.svelte";
 
     type FatigueLevel = "LOW" | "MEDIUM" | "HIGH";
+
+    // --- Exercise Stats ---
+    let exerciseTotals = $state<ExerciseTotals>({ total_exercises: 0, total_points: 0, best_day_points: 0 });
+    let exerciseDailyStats = $state<ExerciseDailyStat[]>([]);
+    let recentExerciseLogs = $state<ExerciseLogExtended[]>([]);
+    let exerciseChartDays = $state(7);
+    let exerciseChartMode = $state<'count' | 'points'>('count');
 
     // --- Stats ---
     let totalSessionsCount = $state(0);
@@ -65,14 +81,31 @@
         ),
     );
 
+    function dfnsLocale() {
+        return $locale?.startsWith('es') ? es : enUS;
+    }
+
+    function timeAgo(dateStr: string): string {
+        if (!dateStr) return "—";
+        const d = new Date(dateStr);
+        const diffMs = Date.now() - d.getTime();
+        const diffDays = diffMs / 86_400_000;
+        if (diffDays < 7) {
+            return formatDistanceToNow(d, { addSuffix: true, locale: dfnsLocale() });
+        }
+        const fmt = isThisYear(d)
+            ? (dfnsLocale() === es ? 'd MMM' : 'MMM d')
+            : (dfnsLocale() === es ? 'd MMM yyyy' : 'MMM d, yyyy');
+        return format(d, fmt, { locale: dfnsLocale() });
+    }
+
     function formatDate(dateStr: string): string {
         if (!dateStr) return "—";
         const d = new Date(dateStr);
-        return d.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-        });
+        const fmt = isThisYear(d)
+            ? (dfnsLocale() === es ? 'd MMM' : 'MMM d')
+            : (dfnsLocale() === es ? 'd MMM yyyy' : 'MMM d, yyyy');
+        return format(d, fmt, { locale: dfnsLocale() });
     }
 
     function formatTime(start: string, end?: string): string {
@@ -152,6 +185,14 @@
         }
     });
 
+    $effect(() => {
+        if (userId && exerciseChartDays) {
+            getExerciseDailyStats(userId, exerciseChartDays).then(stats => {
+                exerciseDailyStats = stats;
+            }).catch(e => console.error("Failed to reload exercise daily stats:", e));
+        }
+    });
+
     onMount(async () => {
         const user = await getCurrentUser();
         if (!user) {
@@ -178,6 +219,19 @@
             sessions = await getSessionSummaries(user.id, perPage, 0);
         } catch (e) {
             console.error("Failed to load sessions:", e);
+        }
+
+        try {
+            const [totals, dailyStats, recentLogs] = await Promise.all([
+                getExerciseTotals(user.id),
+                getExerciseDailyStats(user.id, 30),
+                getRecentExerciseLogs(user.id, 8),
+            ]);
+            exerciseTotals = totals;
+            exerciseDailyStats = dailyStats;
+            recentExerciseLogs = recentLogs;
+        } catch (e) {
+            console.error("Failed to load exercise stats:", e);
         }
 
         loading = false;
@@ -521,6 +575,132 @@
                     <ChevronRight class="w-4 h-4" />
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- ─── Exercise Activity Section ─── -->
+    <div class="mt-8">
+        <div class="flex items-center gap-2 mb-4">
+            <Dumbbell class="w-5 h-5 text-sky-400" />
+            <h2 class="text-xl font-bold text-slate-900 dark:text-white">
+                {$_("exercises.chart.title")}
+            </h2>
+        </div>
+
+        <!-- Mini stat cards -->
+        <div class="grid grid-cols-3 gap-4 mb-6">
+            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-8 h-8 rounded-xl bg-sky-400/10 flex items-center justify-center">
+                        <Dumbbell class="w-4 h-4 text-sky-400" />
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400 mb-1">{$_("exercises.stats.totalExercises")}</p>
+                <p class="text-2xl font-bold text-slate-800 dark:text-white">{exerciseTotals.total_exercises}</p>
+            </div>
+            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-8 h-8 rounded-xl bg-amber-400/10 flex items-center justify-center">
+                        <Star class="w-4 h-4 text-amber-400" />
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400 mb-1">{$_("exercises.stats.totalPoints")}</p>
+                <p class="text-2xl font-bold text-slate-800 dark:text-white">{exerciseTotals.total_points}</p>
+            </div>
+            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-8 h-8 rounded-xl bg-emerald-400/10 flex items-center justify-center">
+                        <Trophy class="w-4 h-4 text-emerald-400" />
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400 mb-1">{$_("exercises.stats.bestDay")}</p>
+                <p class="text-2xl font-bold text-slate-800 dark:text-white">{exerciseTotals.best_day_points}</p>
+            </div>
+        </div>
+
+        <!-- Chart card -->
+        <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5 mb-6">
+            <!-- Toggles -->
+            <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <!-- Days toggle -->
+                <div class="flex items-center gap-1 rounded-xl bg-slate-50 dark:bg-slate-800 p-1">
+                    {#each [7, 14, 30] as d}
+                        <button
+                            onclick={() => (exerciseChartDays = d)}
+                            class="px-3 py-1 rounded-lg text-xs font-semibold transition-all
+                                {exerciseChartDays === d
+                                ? 'bg-sky-400 text-white shadow-sm shadow-sky-400/30'
+                                : 'text-slate-500 dark:text-slate-400 hover:text-sky-400'}"
+                        >
+                            {d === 7 ? $_("exercises.chart.days7") : d === 14 ? $_("exercises.chart.days14") : $_("exercises.chart.days30")}
+                        </button>
+                    {/each}
+                </div>
+                <!-- Mode toggle -->
+                <div class="flex items-center gap-1 rounded-xl bg-slate-50 dark:bg-slate-800 p-1">
+                    <button
+                        onclick={() => (exerciseChartMode = 'count')}
+                        class="px-3 py-1 rounded-lg text-xs font-semibold transition-all
+                            {exerciseChartMode === 'count'
+                            ? 'bg-sky-400 text-white shadow-sm shadow-sky-400/30'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-sky-400'}"
+                    >
+                        {$_("exercises.chart.toggleCount")}
+                    </button>
+                    <button
+                        onclick={() => (exerciseChartMode = 'points')}
+                        class="px-3 py-1 rounded-lg text-xs font-semibold transition-all
+                            {exerciseChartMode === 'points'
+                            ? 'bg-sky-400 text-white shadow-sm shadow-sky-400/30'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-sky-400'}"
+                    >
+                        {$_("exercises.chart.togglePoints")}
+                    </button>
+                </div>
+            </div>
+
+            <ExerciseChart dailyStats={exerciseDailyStats} mode={exerciseChartMode} days={exerciseChartDays} />
+        </div>
+
+        <!-- Recent exercise log -->
+        <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+                <h3 class="font-semibold text-slate-800 dark:text-white text-sm">
+                    {$_("exercises.stats.recentActivity")}
+                </h3>
+            </div>
+
+            {#if recentExerciseLogs.length === 0}
+                <div class="flex flex-col items-center justify-center py-10 text-slate-400">
+                    <Dumbbell class="w-8 h-8 mb-2 opacity-40" />
+                    <p class="text-sm">{$_("exercises.stats.noActivity")}</p>
+                </div>
+            {:else}
+                <ul class="divide-y divide-slate-50 dark:divide-slate-800/60">
+                    {#each recentExerciseLogs as log}
+                        <li class="flex items-center justify-between px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-xl bg-sky-400/10 flex items-center justify-center flex-shrink-0">
+                                    <Dumbbell class="w-4 h-4 text-sky-400" />
+                                </div>
+                                <div>
+                                    <p class="text-sm font-semibold text-slate-800 dark:text-white">{log.exercise}</p>
+                                    <p class="text-xs text-slate-400 mt-0.5">
+                                        {timeAgo(log.completed_at)}
+                                        {#if log.category}
+                                            · {log.category}
+                                        {/if}
+                                    </p>
+                                </div>
+                            </div>
+                            <span class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-xs font-bold">
+                                <Trophy class="w-3 h-3" />
+                                {log.points} {$_("exercises.stats.pointsEarned")}
+                            </span>
+                        </li>
+                    {/each}
+                </ul>
+            {/if}
         </div>
     </div>
 </div>

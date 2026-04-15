@@ -8,8 +8,6 @@
     import { getCurrentUser } from "$lib/auth";
     import { userStore } from "$lib/stores/user";
     import {
-        Video,
-        VideoOff,
         Activity,
         Bell,
         Cloud,
@@ -20,9 +18,6 @@
         Wifi,
         WifiOff,
         Save,
-        RefreshCw,
-        ShieldCheck,
-        ShieldOff,
         Plus,
         Trash2,
         Play,
@@ -30,6 +25,9 @@
         Loader,
         Link,
         Unlink,
+        Camera,
+        VideoOff,
+        RefreshCw,
     } from "@lucide/svelte";
 
     let loading = $state(true);
@@ -46,57 +44,6 @@
     function setLocale(code: string) {
         locale.set(code);
         localStorage.setItem("locale", code);
-    }
-
-    // ─── Camera permission ───────────────────────────────────────────────────
-    let cameraPermission = $state<"granted" | "denied" | "prompt" | "unknown">("unknown");
-    let realCameras = $state<MediaDeviceInfo[]>([]);
-    let activeCameraId = $state<string | null>(null);
-    let refreshingCameras = $state(false);
-
-    async function queryCameraPermission() {
-        if (!navigator.permissions) {
-            cameraPermission = "unknown";
-            return;
-        }
-        try {
-            const result = await navigator.permissions.query({ name: "camera" as PermissionName });
-            cameraPermission = result.state as typeof cameraPermission;
-            result.onchange = () => {
-                cameraPermission = result.state as typeof cameraPermission;
-                if (result.state === "granted") loadCameras();
-            };
-        } catch {
-            cameraPermission = "unknown";
-        }
-    }
-
-    async function loadCameras() {
-        refreshingCameras = true;
-        try {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            realCameras = devices.filter((d) => d.kind === "videoinput");
-            if (!activeCameraId && realCameras.length > 0) {
-                activeCameraId = realCameras[0].deviceId;
-            }
-        } catch {
-            realCameras = [];
-        } finally {
-            refreshingCameras = false;
-        }
-    }
-
-    // Triggered by user click — required for browser permission dialog
-    async function grantCameraAccess() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            stream.getTracks().forEach((t) => t.stop());
-            cameraPermission = "granted";
-            await loadCameras();
-        } catch (e: unknown) {
-            const err = e as { name?: string };
-            cameraPermission = err?.name === "NotAllowedError" ? "denied" : "unknown";
-        }
     }
 
     // ─── ESP32 Sensor management ─────────────────────────────────────────────
@@ -288,6 +235,61 @@
         return $_("settings.sensor_disconnected");
     }
 
+    // ─── Camera management ───────────────────────────────────────────────────
+    let cameraPermission = $state<"idle" | "requesting" | "granted" | "denied">("idle");
+    let detectedCameras = $state<MediaDeviceInfo[]>([]);
+    let enabledCameraIds = $state<Set<string>>(new Set());
+
+    function loadCameraSettings() {
+        try {
+            const raw = localStorage.getItem("posefix_enabled_cameras");
+            if (raw !== null) {
+                // Key exists: use saved state (empty array = user disabled all)
+                const ids: string[] = JSON.parse(raw);
+                enabledCameraIds = new Set(ids);
+            }
+            // Key absent = not configured yet; enabledCameraIds stays empty
+            // until detectSettingsCameras() fills it and auto-enables all
+        } catch {}
+    }
+
+    function saveCameraSettings() {
+        localStorage.setItem("posefix_enabled_cameras", JSON.stringify([...enabledCameraIds]));
+    }
+
+    function toggleCameraEnabled(deviceId: string) {
+        const next = new Set(enabledCameraIds);
+        if (next.has(deviceId)) {
+            next.delete(deviceId);
+        } else {
+            next.add(deviceId);
+        }
+        enabledCameraIds = next;
+        saveCameraSettings();
+    }
+
+    async function detectSettingsCameras() {
+        if (!navigator.mediaDevices?.enumerateDevices) return;
+        cameraPermission = "requesting";
+        try {
+            const tmp = await navigator.mediaDevices.getUserMedia({ video: true });
+            tmp.getTracks().forEach((t) => t.stop());
+            cameraPermission = "granted";
+        } catch {
+            cameraPermission = "denied";
+            return;
+        }
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        detectedCameras = devices.filter(
+            (d) => d.kind === "videoinput" && !/desk\s*view/i.test(d.label),
+        );
+        // If settings not yet configured, enable all detected cameras by default
+        if (!localStorage.getItem("posefix_enabled_cameras") && detectedCameras.length > 0) {
+            enabledCameraIds = new Set(detectedCameras.map((c) => c.deviceId));
+            saveCameraSettings();
+        }
+    }
+
     // ─── Notifications ───────────────────────────────────────────────────────
     let notifState = $state({ ...$settingsStore.notifications });
     const notifItems = [
@@ -300,7 +302,12 @@
     // ─── Preferences ─────────────────────────────────────────────────────────
     let units = $state($settingsStore.units);
     let postureGoal = $state(80);
-    let precision = $state<"High" | "Balanced" | "Low">("High");
+    let precision = $state<"High" | "Balanced" | "Low">("Balanced");
+
+    function setPrecision(p: "High" | "Balanced" | "Low") {
+        precision = p;
+        localStorage.setItem("posefix_ai_precision", p);
+    }
 
     // ─── Save ────────────────────────────────────────────────────────────────
     async function saveChanges() {
@@ -349,10 +356,16 @@
         if (!$userStore.user) userStore.setUser(current);
         postureGoal = current.posture_goal;
 
-        await queryCameraPermission();
-        if (cameraPermission === "granted") await loadCameras();
-
         loadSensors();
+        loadCameraSettings();
+        detectSettingsCameras();
+
+        // Load saved precision
+        const savedPrecision = localStorage.getItem("posefix_ai_precision");
+        if (savedPrecision === "High" || savedPrecision === "Balanced" || savedPrecision === "Low") {
+            precision = savedPrecision;
+        }
+
         loading = false;
 
         return () => {
@@ -419,119 +432,97 @@
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
             <div class="lg:col-span-3 flex flex-col gap-4">
 
-                <!-- ── Camera section ──────────────────────────────────────── -->
+                <!-- ── Cameras section ────────────────────────────────────────── -->
                 <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5">
                     <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-2">
                             <div class="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center text-sky-500">
-                                <Video class="w-4 h-4" />
+                                <Camera class="w-4 h-4" />
                             </div>
                             <h2 class="font-semibold text-slate-800 dark:text-white">
-                                {$_("settings.camera")}
+                                {$_("settings.cameras")}
                             </h2>
                         </div>
                         <button
-                            onclick={loadCameras}
-                            disabled={refreshingCameras}
-                            class="flex items-center gap-1.5 text-xs text-slate-400 hover:text-sky-400 transition-colors disabled:opacity-50 cursor-pointer"
+                            onclick={detectSettingsCameras}
+                            class="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg
+                            bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400
+                            border border-slate-200 dark:border-slate-700 hover:border-sky-400 hover:text-sky-400 transition-all cursor-pointer"
                         >
-                            <RefreshCw class="w-3.5 h-3.5 {refreshingCameras ? 'animate-spin' : ''}" />
+                            <RefreshCw class="w-3.5 h-3.5" />
                             {$_("settings.refresh_cameras")}
                         </button>
                     </div>
 
-                    <!-- Permission badge -->
-                    <div class="flex items-center gap-3 mb-4 px-3 py-2.5 rounded-xl border
-                        {cameraPermission === 'granted'
-                            ? 'bg-green-500/5 border-green-500/20'
-                            : cameraPermission === 'denied'
-                              ? 'bg-red-500/5 border-red-500/20'
-                              : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700'}"
-                    >
-                        {#if cameraPermission === "granted"}
-                            <ShieldCheck class="w-5 h-5 text-green-500 shrink-0" />
-                            <div class="flex-1">
-                                <p class="text-sm font-medium text-green-600 dark:text-green-400">
-                                    {$_("settings.camera_permission")}
-                                </p>
-                                <p class="text-xs text-slate-400">{$_("settings.permission_granted")}</p>
-                            </div>
-                        {:else if cameraPermission === "denied"}
-                            <ShieldOff class="w-5 h-5 text-red-400 shrink-0" />
-                            <div class="flex-1">
-                                <p class="text-sm font-medium text-red-500 dark:text-red-400">
-                                    {$_("settings.camera_permission")}
-                                </p>
-                                <p class="text-xs text-slate-400">{$_("settings.permission_denied")}</p>
-                            </div>
-                        {:else}
-                            <ShieldOff class="w-5 h-5 text-slate-400 shrink-0" />
-                            <div class="flex-1">
-                                <p class="text-sm font-medium text-slate-600 dark:text-slate-300">
-                                    {$_("settings.camera_permission")}
-                                </p>
-                                <p class="text-xs text-slate-400">{$_("settings.permission_prompt")}</p>
-                            </div>
-                            <!-- Grant button — must be a user click to trigger browser dialog -->
-                            <button
-                                onclick={grantCameraAccess}
-                                class="shrink-0 px-3 py-1.5 rounded-lg bg-sky-400 hover:bg-sky-500 text-white text-xs font-bold transition-all active:scale-95 cursor-pointer"
-                            >
-                                {$_("settings.grant_camera")}
-                            </button>
-                        {/if}
-                    </div>
-
-                    {#if cameraPermission === "granted"}
-                        <!-- Revoke hint -->
-                        <p class="text-[10px] text-slate-400 mb-3 px-1">
-                            {$_("settings.revoke_hint")}
-                        </p>
-                    {/if}
-
-                    <!-- Camera list -->
-                    {#if realCameras.length === 0}
-                        <div class="flex flex-col items-center justify-center gap-2 py-6 text-slate-400">
+                    {#if cameraPermission === "denied"}
+                        <div class="flex flex-col items-center gap-2 py-4 text-slate-400">
                             <VideoOff class="w-6 h-6" />
-                            <p class="text-xs">{$_("settings.no_cameras")}</p>
+                            <p class="text-xs text-center">{$_("monitor.noPermission")}</p>
+                            <button
+                                onclick={detectSettingsCameras}
+                                class="mt-1 text-xs font-medium px-3 py-1.5 rounded-lg
+                                bg-sky-400/10 text-sky-400 border border-sky-400/20 hover:bg-sky-400/20 cursor-pointer transition-all"
+                            >
+                                {$_("settings.grant_access")}
+                            </button>
+                        </div>
+                    {:else if cameraPermission === "requesting"}
+                        <div class="flex items-center justify-center gap-2 py-4 text-slate-400">
+                            <RefreshCw class="w-4 h-4 animate-spin text-sky-400" />
+                            <p class="text-xs">{$_("monitor.requestingAccess")}</p>
+                        </div>
+                    {:else if detectedCameras.length === 0 && cameraPermission !== "idle"}
+                        <div class="flex flex-col items-center gap-2 py-4 text-slate-400">
+                            <VideoOff class="w-6 h-6" />
+                            <p class="text-xs">{$_("monitor.noCamerasFound")}</p>
+                        </div>
+                    {:else if detectedCameras.length === 0}
+                        <div class="flex flex-col items-center gap-2 py-4 text-slate-400">
+                            <Camera class="w-6 h-6" />
+                            <p class="text-xs text-center">{$_("settings.cameras_hint")}</p>
+                            <button
+                                onclick={detectSettingsCameras}
+                                class="mt-1 text-xs font-medium px-3 py-1.5 rounded-lg
+                                bg-sky-400/10 text-sky-400 border border-sky-400/20 hover:bg-sky-400/20 cursor-pointer transition-all"
+                            >
+                                {$_("settings.grant_access")}
+                            </button>
                         </div>
                     {:else}
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {#each realCameras as cam, idx}
-                                {@const isActive = activeCameraId === cam.deviceId}
-                                <button
-                                    onclick={() => (activeCameraId = cam.deviceId)}
-                                    class="flex items-center gap-3 p-3 rounded-xl text-left transition-all cursor-pointer border
-                                    {isActive
-                                        ? 'bg-sky-50 dark:bg-sky-900/20 border-sky-300 dark:border-sky-700'
-                                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300'}"
-                                >
-                                    <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors
-                                        {isActive
-                                            ? 'bg-sky-100 dark:bg-sky-900/40 text-sky-400'
-                                            : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}">
-                                        <Video class="w-5 h-5" />
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <div class="flex items-center gap-1.5">
-                                            <p class="text-sm font-semibold text-slate-800 dark:text-white truncate">
+                        <div class="space-y-2">
+                            {#each detectedCameras as cam, idx}
+                                {@const isEnabled = enabledCameraIds.has(cam.deviceId)}
+                                <div class="flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors
+                                    {isEnabled
+                                        ? 'bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700'
+                                        : 'bg-slate-100/60 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/40 opacity-60'}">
+                                    <div class="flex items-center gap-2.5">
+                                        <span class="w-2 h-2 rounded-full {isEnabled ? 'bg-sky-400' : 'bg-slate-400'}"></span>
+                                        <div>
+                                            <p class="text-xs font-semibold text-slate-800 dark:text-white truncate max-w-[180px]">
                                                 {cam.label || `Camera ${idx + 1}`}
                                             </p>
-                                            {#if isActive}<CheckCircle class="w-4 h-4 text-sky-400 shrink-0" />{/if}
-                                        </div>
-                                        <p class="text-xs text-slate-400 font-mono truncate">
-                                            {cam.deviceId.slice(0, 20)}…
-                                        </p>
-                                        <div class="flex items-center gap-1.5 mt-1">
-                                            <span class="w-1.5 h-1.5 rounded-full {isActive ? 'bg-sky-400' : 'bg-slate-400'}"></span>
-                                            <span class="text-[10px] font-bold uppercase tracking-wider {isActive ? 'text-sky-400' : 'text-slate-400'}">
-                                                {isActive ? $_("settings.status.active") : $_("settings.status.standby")}
-                                            </span>
+                                            <p class="text-[10px] text-slate-400 font-mono">
+                                                CAM-{String(idx + 1).padStart(3, "0")}
+                                            </p>
                                         </div>
                                     </div>
-                                </button>
+                                    <!-- Toggle switch -->
+                                    <button
+                                        onclick={() => toggleCameraEnabled(cam.deviceId)}
+                                        class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0 cursor-pointer
+                                        {isEnabled ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
+                                        title={isEnabled ? "Deshabilitar cámara" : "Habilitar cámara"}
+                                    >
+                                        <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
+                                            {isEnabled ? 'translate-x-5' : 'translate-x-0'}"></span>
+                                    </button>
+                                </div>
                             {/each}
                         </div>
+                        <p class="text-[10px] text-slate-400 mt-3">
+                            {$_("settings.cameras_sub")}
+                        </p>
                     {/if}
                 </div>
 
@@ -936,23 +927,16 @@
                         </h2>
                     </div>
                     <p class="text-xs text-slate-400 mb-4">{$_("settings.ai_desc")}</p>
-                    <div class="rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 mb-4">
-                        <div class="flex items-center gap-2 mb-3">
-                            <span class="text-[10px] font-bold uppercase tracking-wider text-sky-400 px-2 py-0.5 rounded-full bg-sky-400/10">
-                                {$_("settings.dynamic")}
-                            </span>
-                            <span class="text-[10px] font-bold uppercase tracking-wider text-purple-400 px-2 py-0.5 rounded-full bg-purple-400/10">
-                                {$_("settings.beta")}
-                            </span>
-                        </div>
-                        <div class="flex items-center justify-between">
+                    <div class="rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4">
+                        <div class="flex items-center justify-between mb-3">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-200">
                                 {$_("settings.precision")}
                             </span>
                             <div class="flex gap-1">
-                                {#each ["Low", "Balanced", "High"] as p}
+                                {#each [["Low", "Faster, less detail"], ["Balanced", "Recommended"], ["High", "More detail, slower"]] as [p, hint]}
                                     <button
-                                        onclick={() => (precision = p as typeof precision)}
+                                        onclick={() => setPrecision(p as "Low" | "Balanced" | "High")}
+                                        title={hint}
                                         class="px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all
                                         {precision === p
                                             ? 'bg-sky-400 text-white'
@@ -963,14 +947,14 @@
                                 {/each}
                             </div>
                         </div>
+                        <p class="text-[10px] text-slate-400">
+                            {precision === "High"
+                                ? "YOLO conf=0.25 — captures more joints, higher CPU use."
+                                : precision === "Low"
+                                  ? "YOLO conf=0.50, frame skip — faster, fewer false positives."
+                                  : "YOLO conf=0.35 — balanced speed and accuracy."}
+                        </p>
                     </div>
-                    <button
-                        class="w-full py-2.5 rounded-xl text-sm font-bold cursor-pointer
-                        bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700
-                        border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 transition-all active:scale-95"
-                    >
-                        {$_("settings.configure_ai")}
-                    </button>
                 </div>
             </div>
         </div>
