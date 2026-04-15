@@ -1,18 +1,12 @@
 {
 	"folders": [
-		{
-			"path": "PoseFixSensor"
-		},
-		{
-			"path": "PoseWebApp"
-		},
-		{
-			"path": "PoseScanner"
-		},
-		{
-			"path": "PoseBackend"
-		}
-	],
+        {
+            "path": "PoseFixSensor"
+        },
+        {
+            "path": "PoseWebApp"
+        }
+    ],
     "settings": {
         "i18n-ally.localesPaths": [
             "../PoseWebApp/src/lib/i18n"
