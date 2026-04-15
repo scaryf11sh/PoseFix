@@ -1,0 +1,52 @@
+{
+	"/(app)": [
+		"src/routes/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/account": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/account/delete": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/account/notifications": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/account/password": [
+		"src/routes/+layout.ts"
+	],
+	"/auth": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/camera": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/exercises": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/exercises/[id]": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/export": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/gallery": [
+		"src/routes/+layout.ts"
+	],
+	"/onboarding": [
+		"src/routes/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/(app)/progress": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/progress/[id]": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/settings": [
+		"src/routes/+layout.ts"
+	]
+}
