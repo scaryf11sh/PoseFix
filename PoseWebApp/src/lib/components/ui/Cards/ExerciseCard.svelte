@@ -3,11 +3,12 @@
     import { locale } from 'svelte-i18n';
     import { Video } from '@lucide/svelte';
     import { TAG_TO_FILTER_AREA } from '$lib/i18n/yoga-es';
+    import { PUBLIC_EDB_API_KEY } from '$env/static/public';
 
     // ── Authenticated image cache (module-level, persists across renders) ────────
     const EDB_IMAGE_HOST = 'exercisedb.p.rapidapi.com';
     const EDB_HEADERS = {
-        'x-rapidapi-key':  '41971f9f1emshc411ec3d031b22dp175bbfjsn803eeed97cc5',
+        'x-rapidapi-key':  PUBLIC_EDB_API_KEY,
         'x-rapidapi-host': EDB_IMAGE_HOST,
     };
     const _blobCache = new Map<string, string>();

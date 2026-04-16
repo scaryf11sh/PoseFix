@@ -1,10 +1,11 @@
 import type { Exercise } from '$lib/exercises';
 import { localExercises } from '$lib/exercises';
 import { YOGA_ES, TAGS_ES, translateTag } from '$lib/i18n/yoga-es';
+import { PUBLIC_EDB_API_KEY } from '$env/static/public';
 
 // ── ExerciseDB (RapidAPI) ────────────────────────────────────────────────────
 
-const EDBKEY  = '41971f9f1emshc411ec3d031b22dp175bbfjsn803eeed97cc5';
+const EDBKEY  = PUBLIC_EDB_API_KEY;
 const EDBHOST = 'exercisedb.p.rapidapi.com';
 const EDB_BASE = 'https://exercisedb.p.rapidapi.com';
 const EDB_HEADERS = {
