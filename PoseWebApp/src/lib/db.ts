@@ -172,7 +172,7 @@ export async function startSession(userId: number): Promise<number> {
     const db = await getDb();
     const result = await db.execute(
         `INSERT INTO user_sessions (user_id, session_start)
-         VALUES ($1, datetime('now'))`,
+         VALUES ($1, datetime('now', 'localtime'))`,
         [userId]
     );
     return result.lastInsertId ?? 0;
@@ -191,8 +191,8 @@ export async function endSession(
     const db = await getDb();
     await db.execute(
         `UPDATE user_sessions SET
-            session_end   = datetime('now'),
-            duration      = CAST((julianday('now') - julianday(session_start)) * 86400 AS INTEGER),
+            session_end   = datetime('now', 'localtime'),
+            duration      = CAST((strftime('%s', datetime('now', 'localtime')) - strftime('%s', session_start)) AS INTEGER),
             posture_score = $2,
             fatigue_score = $3,
             eye_distance  = $4,

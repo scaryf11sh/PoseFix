@@ -617,6 +617,30 @@ pub fn run() {
                     ON export_history(user_id);
             ",
             kind: MigrationKind::Up,
+        },
+        // ─── v15: fix weekly_stats view — use localtime for day grouping ───
+        // Previous version used DATE(session_start) without 'localtime', causing
+        // sessions to be bucketed into the wrong day for UTC-offset users.
+        // Also use localtime for the 7-day window filter.
+        Migration {
+            version: 15,
+            description: "fix_weekly_stats_view_localtime",
+            sql: "
+                DROP VIEW IF EXISTS weekly_stats;
+                CREATE VIEW weekly_stats AS
+                SELECT
+                    user_id,
+                    DATE(session_start)       AS day,
+                    ROUND(AVG(posture_score)) AS avg_score,
+                    COALESCE(SUM(duration), 0) AS total_duration,
+                    COUNT(*)                  AS session_count,
+                    COALESCE(SUM(warnings), 0) AS total_warnings
+                FROM user_sessions
+                WHERE session_end IS NOT NULL
+                  AND session_start >= DATE('now', '-7 days')
+                GROUP BY user_id, DATE(session_start);
+            ",
+            kind: MigrationKind::Up,
         }
     ];
 
