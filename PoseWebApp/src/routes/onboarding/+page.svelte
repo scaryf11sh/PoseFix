@@ -108,7 +108,7 @@
 
     function next() {
         if (step < totalSteps) step++;
-        else goto("/dashboard");
+        else goto("/");
     }
 
     function back() {
