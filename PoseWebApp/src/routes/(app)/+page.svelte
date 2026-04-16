@@ -21,7 +21,7 @@
     import { PUBLIC_POSE_WS_HOST, PUBLIC_POSE_WS_PORT } from "$env/static/public";
     import { getCurrentUser } from "$lib/auth";
     import { userStore } from "$lib/stores/user";
-    import { sessionStore } from "$lib/stores/session";
+    import { sessionStore, livePostureScore } from "$lib/stores/session";
     import {
         getWeeklyStats,
         getSessionStats,
@@ -227,14 +227,19 @@
         sessionBusy = true;
         startPhase = "stopping";
         try {
+            // Use the live posture score from the camera page if available,
+            // fall back to historical avg. Never save 0 — use null-coalescing.
+            let finalScore = 0;
+            livePostureScore.subscribe((v) => { finalScore = v ?? score; })();
             await endSession(activeSessionId, {
-                posture_score: score,
+                posture_score: finalScore,
                 fatigue_score: 0,
                 eye_distance: eyeDist ?? 0,
                 blink_rate: 0,
             });
             activeSessionId = null;
             sessionStore.set(null);
+            livePostureScore.set(null);
             stopTimer();
 
             // Stop the Python server
@@ -257,7 +262,7 @@
         try {
             const stats = await getSessionStats(userId);
             totalSessions = stats.total_sessions;
-            if (stats.total_sessions > 0 && stats.avg_score) {
+            if (stats.total_sessions > 0 && stats.avg_score != null) {
                 score = Math.round(stats.avg_score);
                 dailyGoalPct = Math.min(
                     100,
@@ -329,8 +334,10 @@
                 if (modelUp) {
                     activeSessionId = active.id;
                     sessionStore.set(active.id);
+                    // session_start stored as localtime (datetime('now','localtime')).
+                    // Replace space with 'T' for unambiguous ISO parsing across engines.
                     const elapsed = Math.floor(
-                        (Date.now() - new Date(active.session_start).getTime()) / 1000,
+                        (Date.now() - new Date(active.session_start.replace(" ", "T")).getTime()) / 1000,
                     );
                     startTimer(elapsed);
                 } else {

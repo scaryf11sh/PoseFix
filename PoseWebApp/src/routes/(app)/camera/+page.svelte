@@ -19,7 +19,7 @@
     import { PUBLIC_POSE_WS_HOST, PUBLIC_POSE_WS_PORT } from "$env/static/public";
     import { getCurrentUser } from "$lib/auth";
     import { userStore } from "$lib/stores/user";
-    import { sessionStore } from "$lib/stores/session";
+    import { sessionStore, livePostureScore } from "$lib/stores/session";
     import {
         getActiveSession,
         addWarning,
@@ -432,6 +432,7 @@
                             invoke<PostureAnalysis>("analyze_multi_camera", { cameras })
                                 .then((analysis) => {
                                     postureScore = analysis.posture_score;
+                                    livePostureScore.set(analysis.posture_score);
                                     fusedAnalysis = analysis;
                                     // Store per-camera badge scores (all show fused result)
                                     const updated = new Map(cameraAnalysis);
@@ -445,6 +446,7 @@
                                         (l) => (l.visibility ?? 1) > 0.5,
                                     ).length;
                                     postureScore = Math.round((visible / 17) * 100);
+                                    livePostureScore.set(postureScore);
                                 })
                                 .finally(() => { analysisPending = false; });
                         }
@@ -712,6 +714,8 @@
             }
             // Do NOT end the session here — the Dashboard owns session lifecycle.
             // Cleaning up streams/WS is enough.
+            // livePostureScore is intentionally NOT reset here so the dashboard
+            // can read the last known score when stopping the session.
         };
     });
 </script>
