@@ -358,6 +358,23 @@
 
         return () => stopTimer();
     });
+
+    // ─── ⌘↩ Start / Stop session shortcut ───────────────────────────────────
+    $effect(() => {
+        function onkey(e: KeyboardEvent) {
+            if (!(e.key === "Enter" && (e.ctrlKey || e.metaKey))) return;
+            const tag = (e.target as HTMLElement).tagName.toLowerCase();
+            if (tag === "input" || tag === "textarea") return;
+            e.preventDefault();
+            if (activeSessionId) {
+                handleStopSession();
+            } else if (!sessionBusy) {
+                handleStartSession();
+            }
+        }
+        window.addEventListener("keydown", onkey);
+        return () => window.removeEventListener("keydown", onkey);
+    });
 </script>
 
 <!-- Toast -->

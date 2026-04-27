@@ -501,6 +501,19 @@
         userId = user.id;
         await loadHistory();
     });
+
+    // ─── ⌘⇧E Generate export shortcut ───────────────────────────────────────
+    $effect(() => {
+        function onkey(e: KeyboardEvent) {
+            if (!((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "e")) return;
+            const tag = (e.target as HTMLElement).tagName.toLowerCase();
+            if (tag === "input" || tag === "textarea") return;
+            e.preventDefault();
+            if (!generating && activeCount > 0) generate();
+        }
+        window.addEventListener("keydown", onkey);
+        return () => window.removeEventListener("keydown", onkey);
+    });
 </script>
 
 <!-- Toast -->
