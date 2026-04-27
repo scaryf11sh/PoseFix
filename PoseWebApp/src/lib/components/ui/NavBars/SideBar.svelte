@@ -154,20 +154,29 @@
 
             <!-- Main nav -->
             <div class="flex flex-col gap-2">
-                {#each [{ href: "/", icon: LayoutDashboard, label: $_("nav.dashboard") }, { href: "/camera", icon: Video, label: $_("nav.monitor") }, { href: "/exercises", icon: Dumbbell, label: $_("nav.exercises") }, { href: "/progress", icon: ClipboardClock, label: $_("nav.progress") }, { href: "/export", icon: FileDown, label: $_("nav.export") }] as item}
+                {#each [
+                    { href: "/",          icon: LayoutDashboard, label: $_("nav.dashboard"), shortcut: "⌘1" },
+                    { href: "/camera",    icon: Video,            label: $_("nav.monitor"),   shortcut: "⌘2" },
+                    { href: "/exercises", icon: Dumbbell,         label: $_("nav.exercises"), shortcut: "⌘3" },
+                    { href: "/progress",  icon: ClipboardClock,   label: $_("nav.progress"),  shortcut: "⌘4" },
+                    { href: "/export",    icon: FileDown,         label: $_("nav.export"),    shortcut: "⌘5" },
+                ] as item}
                     <a
                         href={item.href}
-                        aria-label={item.label}
-                        class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full transition-all duration-200 cursor-pointer
+                        aria-label="{item.label} ({item.shortcut})"
+                        title="{item.label}  {item.shortcut}"
+                        class="group flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full transition-all duration-200 cursor-pointer
                             {isActive(item.href)
                             ? 'outline outline-frozen-lake-400/60 dark:outline-frozen-lake-800 bg-frozen-lake-400/15 text-deep-twilight-900 dark:text-frozen-lake-200'
                             : 'hover:bg-gray-200/50 dark:hover:bg-gray-800/50 text-deep-twilight-900/50 dark:text-frozen-lake-200/50 hover:translate-x-3'}"
                     >
-                        <svelte:component
-                            this={item.icon}
-                            class="w-5 h-5 shrink-0"
-                        />
+                        <svelte:component this={item.icon} class="w-5 h-5 shrink-0" />
                         <span class="flex-1 cursor-pointer">{item.label}</span>
+                        <kbd class="text-[9px] font-mono px-1 py-0.5 rounded
+                            opacity-0 group-hover:opacity-60 transition-opacity duration-150
+                            bg-slate-200/80 dark:bg-slate-700/80
+                            border border-slate-300/60 dark:border-slate-600/60
+                            text-slate-500 dark:text-slate-400 shrink-0">{item.shortcut}</kbd>
                     </a>
                 {/each}
             </div>
@@ -178,14 +187,20 @@
             <!-- Settings -->
             <a
                 href="/settings"
-                aria-label={$_("nav.settings")}
-                class="flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full transition-all duration-200 cursor-pointer
+                aria-label="{$_('nav.settings')} (⌘,)"
+                title="{$_('nav.settings')}  ⌘,"
+                class="group flex flex-row items-center gap-2 rounded-full py-3 px-5 w-full transition-all duration-200 cursor-pointer
                     {isActive('/settings')
                     ? 'outline outline-frozen-lake-400/60 dark:outline-frozen-lake-800 bg-frozen-lake-400/15 text-deep-twilight-900 dark:text-frozen-lake-200'
                     : 'hover:bg-gray-200/50 dark:hover:bg-gray-800/50 text-deep-twilight-900/50 dark:text-frozen-lake-200/50 hover:translate-x-3'}"
             >
                 <Settings2 class="w-5 h-5 shrink-0" />
                 <span class="flex-1 cursor-pointer">{$_("nav.settings")}</span>
+                <kbd class="text-[9px] font-mono px-1 py-0.5 rounded
+                    opacity-0 group-hover:opacity-60 transition-opacity duration-150
+                    bg-slate-200/80 dark:bg-slate-700/80
+                    border border-slate-300/60 dark:border-slate-600/60
+                    text-slate-500 dark:text-slate-400 shrink-0">⌘,</kbd>
             </a>
 
             <!-- Account -->
