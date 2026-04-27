@@ -7,6 +7,8 @@
     import { updateUser } from "$lib/db";
     import { getCurrentUser } from "$lib/auth";
     import { userStore } from "$lib/stores/user";
+    import { bleStore } from "$lib/stores/ble";
+    import { invoke } from "@tauri-apps/api/core";
     import {
         Activity,
         Bell,
@@ -28,6 +30,10 @@
         Camera,
         VideoOff,
         RefreshCw,
+        Bluetooth,
+        BluetoothOff,
+        Radio,
+        Signal,
     } from "@lucide/svelte";
 
     let loading = $state(true);
@@ -46,193 +52,56 @@
         localStorage.setItem("locale", code);
     }
 
-    // ─── ESP32 Sensor management ─────────────────────────────────────────────
-    type SensorStatus =
-        | "disconnected"
-        | "connecting"
-        | "handshake"
-        | "paired"
-        | "streaming"
-        | "failed";
+    // ─── BLE Sensor management ───────────────────────────────────────────────
+    let bleError = $state<string | null>(null);
 
-    type Esp32Sensor = {
-        id: string;           // generated locally
-        ip: string;
-        port: number;
-        label: string;        // name from handshake response
-        firmware: string;
-        deviceId: string;     // mac / device ID from ESP32
-        status: SensorStatus;
-        signal: number;       // RSSI placeholder, 0–100
-        ws: WebSocket | null;
-    };
-
-    let sensors = $state<Esp32Sensor[]>([]);
-    let showAddForm = $state(false);
-    let newSensorIp = $state("");
-    let newSensorPort = $state(81);
-
-    function loadSensors() {
+    async function bleScan() {
+        bleError = null;
+        bleStore.setScanning();
         try {
-            const saved = localStorage.getItem("posefix_sensors");
-            if (saved) {
-                const parsed: Omit<Esp32Sensor, "ws">[] = JSON.parse(saved);
-                sensors = parsed.map((s) => ({ ...s, ws: null, status: "disconnected" }));
-            }
-        } catch {}
-    }
-
-    function persistSensors() {
-        const toSave = sensors.map(({ ws: _, ...rest }) => rest);
-        localStorage.setItem("posefix_sensors", JSON.stringify(toSave));
-    }
-
-    function sensorKey(): string {
-        return `sensor_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    }
-
-    async function connectSensor(sensor: Esp32Sensor) {
-        if (sensor.ws) {
-            sensor.ws.close();
-            sensor.ws = null;
+            const results = await invoke<{ address: string; name: string; rssi?: number }[]>("ble_scan");
+            bleStore.setScanResults(results);
+        } catch (e) {
+            bleError = String(e);
+            bleStore.setError(String(e));
         }
+    }
 
-        sensors = sensors.map((s) =>
-            s.id === sensor.id ? { ...s, status: "connecting" } : s,
-        );
-
-        const url = `ws://${sensor.ip}:${sensor.port}`;
-
+    async function bleConnect(address: string) {
+        bleError = null;
+        bleStore.setConnecting(address);
         try {
-            const ws = new WebSocket(url);
-            const connectTimeout = setTimeout(() => {
-                if (ws.readyState !== WebSocket.OPEN) {
-                    ws.close();
-                    sensors = sensors.map((s) =>
-                        s.id === sensor.id ? { ...s, status: "failed", ws: null } : s,
-                    );
-                }
-            }, 5000);
-
-            ws.onopen = () => {
-                clearTimeout(connectTimeout);
-                sensors = sensors.map((s) =>
-                    s.id === sensor.id ? { ...s, status: "handshake", ws } : s,
-                );
-                // Send handshake
-                ws.send(
-                    JSON.stringify({ cmd: "HELLO", app: "PoseFix", version: "1.0" }),
-                );
-            };
-
-            ws.onmessage = (e) => {
-                try {
-                    const msg = JSON.parse(e.data);
-                    if (msg.status === "ok" && msg.device) {
-                        // Handshake succeeded
-                        sensors = sensors.map((s) =>
-                            s.id === sensor.id
-                                ? {
-                                      ...s,
-                                      status: "paired",
-                                      label: msg.device ?? s.label,
-                                      firmware: msg.firmware ?? s.firmware,
-                                      deviceId: msg.id ?? s.deviceId,
-                                  }
-                                : s,
-                        );
-                        persistSensors();
-                    }
-                    // Ignore streaming data here — the monitor page handles it
-                } catch {}
-            };
-
-            ws.onerror = () => {};
-            ws.onclose = () => {
-                sensors = sensors.map((s) =>
-                    s.id === sensor.id
-                        ? { ...s, ws: null, status: "disconnected" }
-                        : s,
-                );
-            };
-        } catch {
-            sensors = sensors.map((s) =>
-                s.id === sensor.id ? { ...s, status: "failed" } : s,
-            );
+            await invoke("ble_connect", { address });
+        } catch (e) {
+            bleError = String(e);
+            bleStore.setError(String(e));
         }
     }
 
-    function disconnectSensor(sensor: Esp32Sensor) {
-        if (sensor.ws) {
-            if (sensor.status === "streaming") {
-                sensor.ws.send(JSON.stringify({ cmd: "STOP" }));
-            }
-            sensor.ws.close();
-        }
-        sensors = sensors.map((s) =>
-            s.id === sensor.id ? { ...s, ws: null, status: "disconnected" } : s,
-        );
+    async function bleStart() {
+        try { await invoke("ble_start"); } catch (e) { bleError = String(e); }
     }
 
-    function startStreaming(sensor: Esp32Sensor) {
-        if (!sensor.ws || sensor.ws.readyState !== WebSocket.OPEN) return;
-        sensor.ws.send(JSON.stringify({ cmd: "START" }));
-        sensors = sensors.map((s) =>
-            s.id === sensor.id ? { ...s, status: "streaming" } : s,
-        );
+    async function bleStop() {
+        try { await invoke("ble_stop"); } catch (e) { bleError = String(e); }
     }
 
-    function stopStreaming(sensor: Esp32Sensor) {
-        if (!sensor.ws || sensor.ws.readyState !== WebSocket.OPEN) return;
-        sensor.ws.send(JSON.stringify({ cmd: "STOP" }));
-        sensors = sensors.map((s) =>
-            s.id === sensor.id ? { ...s, status: "paired" } : s,
-        );
+    async function bleDisconnect() {
+        try { await invoke("ble_disconnect"); } catch (e) { bleError = String(e); }
     }
 
-    function removeSensor(sensor: Esp32Sensor) {
-        disconnectSensor(sensor);
-        sensors = sensors.filter((s) => s.id !== sensor.id);
-        persistSensors();
-    }
-
-    function addSensor() {
-        if (!newSensorIp.trim()) return;
-        const newEntry: Esp32Sensor = {
-            id: sensorKey(),
-            ip: newSensorIp.trim(),
-            port: newSensorPort,
-            label: `XIAO-ESP32S3-${newSensorIp.split(".").pop()}`,
-            firmware: "—",
-            deviceId: "—",
-            status: "disconnected",
-            signal: 0,
-            ws: null,
-        };
-        sensors = [...sensors, newEntry];
-        persistSensors();
-        newSensorIp = "";
-        newSensorPort = 81;
-        showAddForm = false;
-        connectSensor(newEntry);
-    }
-
-    function sensorStatusColor(s: SensorStatus) {
-        if (s === "streaming") return "text-green-500 bg-green-500/10 border-green-500/20";
-        if (s === "paired") return "text-sky-400 bg-sky-400/10 border-sky-400/20";
-        if (s === "connecting" || s === "handshake")
-            return "text-yellow-400 bg-yellow-400/10 border-yellow-400/20";
-        if (s === "failed") return "text-red-400 bg-red-400/10 border-red-400/20";
+    function bleStatusColor(status: string) {
+        if (status === "streaming")   return "text-green-500 bg-green-500/10 border-green-500/20";
+        if (status === "connected")   return "text-sky-400 bg-sky-400/10 border-sky-400/20";
+        if (status === "connecting")  return "text-yellow-400 bg-yellow-400/10 border-yellow-400/20";
+        if (status === "scanning")    return "text-purple-400 bg-purple-400/10 border-purple-400/20";
         return "text-slate-400 bg-slate-100 dark:bg-slate-700 border-slate-300 dark:border-slate-600";
     }
 
-    function sensorStatusLabel(s: SensorStatus) {
-        if (s === "streaming") return $_("settings.sensor_streaming");
-        if (s === "paired") return $_("settings.sensor_paired");
-        if (s === "connecting") return $_("settings.sensor_connecting");
-        if (s === "handshake") return $_("settings.sensor_handshake");
-        if (s === "failed") return $_("settings.sensor_failed");
-        return $_("settings.sensor_disconnected");
+    function rssiBar(rssi?: number) {
+        if (!rssi) return 0;
+        // rssi typically -100 (weak) to -40 (strong)
+        return Math.max(0, Math.min(100, (rssi + 100) * (100 / 60)));
     }
 
     // ─── Camera management ───────────────────────────────────────────────────
@@ -356,24 +225,15 @@
         if (!$userStore.user) userStore.setUser(current);
         postureGoal = current.posture_goal;
 
-        loadSensors();
         loadCameraSettings();
         detectSettingsCameras();
 
-        // Load saved precision
         const savedPrecision = localStorage.getItem("posefix_ai_precision");
         if (savedPrecision === "High" || savedPrecision === "Balanced" || savedPrecision === "Low") {
             precision = savedPrecision;
         }
 
         loading = false;
-
-        return () => {
-            // Disconnect all sensors when navigating away
-            for (const s of sensors) {
-                if (s.ws) s.ws.close();
-            }
-        };
     });
 </script>
 
@@ -526,190 +386,154 @@
                     {/if}
                 </div>
 
-                <!-- ── Sensors section ─────────────────────────────────────── -->
+                <!-- ── BLE Sensors section ────────────────────────────────── -->
                 <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5">
                     <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-2">
                             <div class="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-purple-500">
-                                <Activity class="w-4 h-4" />
+                                <Bluetooth class="w-4 h-4" />
                             </div>
                             <h2 class="font-semibold text-slate-800 dark:text-white">
                                 {$_("settings.sensors")}
                             </h2>
+                            {#if $bleStore.status !== "disconnected"}
+                                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-md border {bleStatusColor($bleStore.status)}">
+                                    {#if $bleStore.status === "scanning" || $bleStore.status === "connecting"}
+                                        <span class="inline-flex items-center gap-1">
+                                            <Loader class="w-2.5 h-2.5 animate-spin" />
+                                            {$bleStore.status}
+                                        </span>
+                                    {:else if $bleStore.status === "streaming"}
+                                        <span class="inline-flex items-center gap-1">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                                            streaming
+                                        </span>
+                                    {:else}
+                                        {$bleStore.status}
+                                    {/if}
+                                </span>
+                            {/if}
                         </div>
-                        <div class="flex items-center gap-3">
-                            <span class="text-xs text-slate-400">
-                                {$_("settings.connected", {
-                                    values: { n: sensors.filter((s) => s.status !== "disconnected" && s.status !== "failed").length },
-                                })}
-                            </span>
-                            <button
-                                onclick={() => (showAddForm = !showAddForm)}
-                                class="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg
-                                bg-sky-400/10 text-sky-400 border border-sky-400/20 hover:bg-sky-400/20 transition-all cursor-pointer"
-                            >
-                                <Plus class="w-3.5 h-3.5" />
-                                {$_("settings.add_sensor")}
-                            </button>
-                        </div>
+                        <button
+                            onclick={bleScan}
+                            disabled={$bleStore.status === "scanning" || $bleStore.status === "connecting"}
+                            class="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg
+                            bg-purple-400/10 text-purple-500 border border-purple-400/20 hover:bg-purple-400/20
+                            disabled:opacity-50 transition-all cursor-pointer"
+                        >
+                            {#if $bleStore.status === "scanning"}
+                                <Loader class="w-3.5 h-3.5 animate-spin" />
+                                Scanning…
+                            {:else}
+                                <Radio class="w-3.5 h-3.5" />
+                                Scan BLE
+                            {/if}
+                        </button>
                     </div>
 
-                    <!-- Add sensor form -->
-                    {#if showAddForm}
-                        <div class="mb-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                            <p class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-                                XIAO ESP32-S3 Sense
-                            </p>
-                            <div class="flex gap-2 mb-3">
-                                <div class="flex-1">
-                                    <label class="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">
-                                        {$_("settings.sensor_ip")}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        bind:value={newSensorIp}
-                                        placeholder={$_("settings.sensor_ip_hint")}
-                                        class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900
-                                        border border-slate-200 dark:border-slate-700
-                                        text-slate-800 dark:text-white placeholder-slate-400
-                                        focus:outline-none focus:border-sky-400 transition-colors font-mono"
-                                    />
+                    <!-- Error -->
+                    {#if bleError}
+                        <div class="mb-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400">
+                            {bleError}
+                        </div>
+                    {/if}
+
+                    <!-- Connected device -->
+                    {#if $bleStore.status === "connected" || $bleStore.status === "streaming"}
+                        <div class="mb-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-500 shrink-0">
+                                    <Bluetooth class="w-4 h-4" />
                                 </div>
-                                <div class="w-24">
-                                    <label class="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">
-                                        {$_("settings.sensor_port")}
-                                    </label>
-                                    <input
-                                        type="number"
-                                        bind:value={newSensorPort}
-                                        placeholder="81"
-                                        class="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-900
-                                        border border-slate-200 dark:border-slate-700
-                                        text-slate-800 dark:text-white placeholder-slate-400
-                                        focus:outline-none focus:border-sky-400 transition-colors font-mono"
-                                    />
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm font-semibold text-slate-800 dark:text-white">PoseFix Sensor</p>
+                                    <p class="text-[10px] text-slate-400 font-mono truncate">{$bleStore.address}</p>
+                                    {#if $bleStore.sensorData}
+                                        {@const d = $bleStore.sensorData}
+                                        <div class="flex gap-3 mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                            {#if d.head}
+                                                <span>Head — P:{d.head.pitch.toFixed(1)}° R:{d.head.roll.toFixed(1)}° Y:{d.head.yaw.toFixed(1)}°</span>
+                                            {/if}
+                                            {#if d.back}
+                                                <span>Back — P:{d.back.pitch.toFixed(1)}° R:{d.back.roll.toFixed(1)}° Y:{d.back.yaw.toFixed(1)}°</span>
+                                            {/if}
+                                        </div>
+                                    {/if}
                                 </div>
-                            </div>
-                            <p class="text-[10px] text-slate-400 mb-3">
-                                {$_("settings.sensor_port_hint")} • WebSocket endpoint: <span class="font-mono">ws://&lt;ip&gt;:&lt;port&gt;</span>
-                            </p>
-                            <div class="flex gap-2">
-                                <button
-                                    onclick={addSensor}
-                                    disabled={!newSensorIp.trim()}
-                                    class="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg
-                                    bg-sky-400 hover:bg-sky-500 text-white text-sm font-bold
-                                    disabled:opacity-50 transition-all active:scale-95 cursor-pointer"
-                                >
-                                    <Link class="w-3.5 h-3.5" />
-                                    {$_("settings.connect_sensor")}
-                                </button>
-                                <button
-                                    onclick={() => (showAddForm = false)}
-                                    class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700
-                                    text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300
-                                    transition-colors cursor-pointer"
-                                >
-                                    {$_("common.cancel")}
-                                </button>
+                                <div class="flex items-center gap-1.5 shrink-0">
+                                    {#if $bleStore.status === "connected"}
+                                        <button
+                                            onclick={bleStart}
+                                            class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium
+                                            bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20 cursor-pointer transition-all"
+                                        >
+                                            <Play class="w-3 h-3" />
+                                            Start
+                                        </button>
+                                    {:else}
+                                        <button
+                                            onclick={bleStop}
+                                            class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium
+                                            bg-amber-500/10 text-amber-500 border border-amber-400/20 hover:bg-amber-500/20 cursor-pointer transition-all"
+                                        >
+                                            <Square class="w-3 h-3" />
+                                            Stop
+                                        </button>
+                                    {/if}
+                                    <button
+                                        onclick={bleDisconnect}
+                                        class="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
+                                        title="Disconnect"
+                                    >
+                                        <Unlink class="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     {/if}
 
-                    <!-- Sensor list -->
-                    {#if sensors.length === 0}
-                        <div class="flex flex-col items-center justify-center gap-2 py-6 text-slate-400">
-                            <Activity class="w-6 h-6" />
-                            <p class="text-xs text-center">
-                                No sensors added yet.<br />
-                                Click "Add ESP32 Sensor" to connect your XIAO ESP32-S3 Sense.
+                    <!-- Scan results -->
+                    {#if $bleStore.scanResults.length > 0 && $bleStore.status !== "connected" && $bleStore.status !== "streaming"}
+                        <div class="space-y-1.5">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                Found {$bleStore.scanResults.length} device{$bleStore.scanResults.length !== 1 ? "s" : ""}
                             </p>
-                        </div>
-                    {:else}
-                        <div class="space-y-2">
-                            {#each sensors as s}
-                                <div class="rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-3">
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex-1 min-w-0">
-                                            <div class="flex items-center gap-2 mb-0.5">
-                                                <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">
-                                                    {s.label}
-                                                </span>
-                                                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-md border {sensorStatusColor(s.status)}">
-                                                    {#if s.status === "connecting" || s.status === "handshake"}
-                                                        <span class="inline-flex items-center gap-1">
-                                                            <Loader class="w-2.5 h-2.5 animate-spin" />
-                                                            {sensorStatusLabel(s.status)}
-                                                        </span>
-                                                    {:else if s.status === "streaming"}
-                                                        <span class="inline-flex items-center gap-1">
-                                                            <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                                                            {sensorStatusLabel(s.status)}
-                                                        </span>
-                                                    {:else}
-                                                        {sensorStatusLabel(s.status)}
-                                                    {/if}
-                                                </span>
-                                            </div>
-                                            <div class="flex items-center gap-3 text-[10px] text-slate-400 font-mono">
-                                                <span>{s.ip}:{s.port}</span>
-                                                {#if s.deviceId !== "—"}
-                                                    <span>ID: {s.deviceId}</span>
-                                                {/if}
-                                                {#if s.firmware !== "—"}
-                                                    <span>FW: {s.firmware}</span>
-                                                {/if}
-                                            </div>
+                            {#each $bleStore.scanResults as r}
+                                <div class="flex items-center justify-between px-3 py-2 rounded-xl
+                                    bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                                    <div class="flex items-center gap-2.5">
+                                        <Bluetooth class="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                                        <div>
+                                            <p class="text-xs font-semibold text-slate-800 dark:text-white">{r.name}</p>
+                                            <p class="text-[10px] text-slate-400 font-mono">{r.address.slice(0, 18)}…</p>
                                         </div>
-
-                                        <!-- Action buttons -->
-                                        <div class="flex items-center gap-1.5 shrink-0">
-                                            {#if s.status === "disconnected" || s.status === "failed"}
-                                                <button
-                                                    onclick={() => connectSensor(s)}
-                                                    class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium
-                                                    bg-sky-400/10 text-sky-400 border border-sky-400/20 hover:bg-sky-400/20 cursor-pointer transition-all"
-                                                >
-                                                    <Link class="w-3 h-3" />
-                                                    {$_("settings.connect_sensor")}
-                                                </button>
-                                            {:else if s.status === "paired"}
-                                                <button
-                                                    onclick={() => startStreaming(s)}
-                                                    class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium
-                                                    bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20 cursor-pointer transition-all"
-                                                >
-                                                    <Play class="w-3 h-3" />
-                                                    {$_("settings.start_streaming")}
-                                                </button>
-                                                <button
-                                                    onclick={() => disconnectSensor(s)}
-                                                    class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium
-                                                    bg-slate-100 dark:bg-slate-700 text-slate-500 border border-slate-200 dark:border-slate-600 hover:text-red-400 cursor-pointer transition-all"
-                                                >
-                                                    <Unlink class="w-3 h-3" />
-                                                    {$_("settings.disconnect_sensor")}
-                                                </button>
-                                            {:else if s.status === "streaming"}
-                                                <button
-                                                    onclick={() => stopStreaming(s)}
-                                                    class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium
-                                                    bg-red-500/10 text-red-400 border border-red-400/20 hover:bg-red-500/20 cursor-pointer transition-all"
-                                                >
-                                                    <Square class="w-3 h-3" />
-                                                    {$_("settings.stop_streaming")}
-                                                </button>
-                                            {/if}
-                                            <button
-                                                onclick={() => removeSensor(s)}
-                                                class="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 cursor-pointer transition-all"
-                                            >
-                                                <Trash2 class="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
+                                        {#if r.rssi}
+                                            <div class="flex items-center gap-1 text-[10px] text-slate-400">
+                                                <Signal class="w-3 h-3" />
+                                                {r.rssi} dBm
+                                            </div>
+                                        {/if}
                                     </div>
+                                    <button
+                                        onclick={() => bleConnect(r.address)}
+                                        disabled={$bleStore.status === "connecting"}
+                                        class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium
+                                        bg-purple-400/10 text-purple-500 border border-purple-400/20
+                                        hover:bg-purple-400/20 disabled:opacity-50 cursor-pointer transition-all"
+                                    >
+                                        <Link class="w-3 h-3" />
+                                        Connect
+                                    </button>
                                 </div>
                             {/each}
+                        </div>
+                    {:else if $bleStore.status === "disconnected" && $bleStore.scanResults.length === 0}
+                        <div class="flex flex-col items-center justify-center gap-2 py-6 text-slate-400">
+                            <BluetoothOff class="w-6 h-6" />
+                            <p class="text-xs text-center">
+                                No sensors found.<br />
+                                Power on your XIAO ESP32-S3 and press <strong>Scan BLE</strong>.
+                            </p>
                         </div>
                     {/if}
                 </div>
