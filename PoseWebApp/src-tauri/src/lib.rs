@@ -1,8 +1,14 @@
 use std::fs;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_sql::{Migration, MigrationKind};
 use serde::{Deserialize, Serialize};
+
+// ─── BLE imports ─────────────────────────────────────────────────────────────
+use btleplug::api::{Central, Manager as BtManager, Peripheral as BtPeripheral, ScanFilter, WriteType};
+use btleplug::platform::{Adapter, Manager as BleManager, Peripheral};
+use futures::stream::StreamExt;
+use uuid::Uuid;
 
 // ─── Pose server process state ───────────────────────────────────────────────
 
@@ -367,6 +373,261 @@ fn save_avatar(path: String, data: Vec<u8>) -> Result<(), String> {
     fs::write(&path, &data).map_err(|e| e.to_string())
 }
 
+// ─── BLE constants ───────────────────────────────────────────────────────────
+
+const POSEFIX_SERVICE_UUID: &str = "15464a70-4048-45e7-9069-b9d37aaea15e";
+const POSEFIX_TX_UUID: &str      = "1fdfc708-b552-4d80-bd1c-761f14d009fe";
+const POSEFIX_RX_UUID: &str      = "2b3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f";
+const CMD_START: u8 = 0x01;
+const CMD_STOP:  u8 = 0x02;
+
+// ─── BLE managed state ───────────────────────────────────────────────────────
+
+struct BleState {
+    adapter:     Mutex<Option<Adapter>>,
+    peripheral:  Mutex<Option<Peripheral>>,
+    task_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+impl BleState {
+    fn new() -> Self {
+        BleState {
+            adapter:     Mutex::new(None),
+            peripheral:  Mutex::new(None),
+            task_handle: Mutex::new(None),
+        }
+    }
+}
+
+// ─── BLE serializable types ──────────────────────────────────────────────────
+
+#[derive(Serialize, Clone)]
+struct BleScanResult {
+    address: String,
+    name:    String,
+    rssi:    Option<i16>,
+}
+
+#[derive(Serialize, Clone)]
+struct SensorAngle {
+    pitch: f32,
+    roll:  f32,
+    yaw:   f32,
+}
+
+#[derive(Serialize, Clone)]
+struct BleSensorEvent {
+    nonce: u32,
+    head:  Option<SensorAngle>,
+    back:  Option<SensorAngle>,
+}
+
+// ─── Payload parser (matches #pragma pack(1) C struct) ───────────────────────
+// Payload layout:
+//   [0..3]  nonce        u32 LE
+//   [4]     head.id      u8   (0 = head present, 0xFF = absent)
+//   [5..6]  head.pitch   u16 LE  (angle * 100)
+//   [7..8]  head.roll    u16 LE
+//   [9..10] head.yaw     u16 LE
+//   [11]    back.id      u8   (1 = back present, 0xFF = absent)
+//   [12..13] back.pitch  u16 LE
+//   [14..15] back.roll   u16 LE
+//   [16..17] back.yaw    u16 LE
+//   [18]    status       u8
+//   [19..26] tag         [u8; 8]
+fn parse_payload(data: &[u8]) -> Option<BleSensorEvent> {
+    if data.len() < 18 { return None; }
+
+    let nonce = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+
+    let head = if data[4] == 0 {
+        Some(SensorAngle {
+            pitch: u16::from_le_bytes([data[5],  data[6]])  as f32 / 100.0,
+            roll:  u16::from_le_bytes([data[7],  data[8]])  as f32 / 100.0,
+            yaw:   u16::from_le_bytes([data[9],  data[10]]) as f32 / 100.0,
+        })
+    } else {
+        None
+    };
+
+    let back = if data[11] == 1 {
+        Some(SensorAngle {
+            pitch: u16::from_le_bytes([data[12], data[13]]) as f32 / 100.0,
+            roll:  u16::from_le_bytes([data[14], data[15]]) as f32 / 100.0,
+            yaw:   u16::from_le_bytes([data[16], data[17]]) as f32 / 100.0,
+        })
+    } else {
+        None
+    };
+
+    Some(BleSensorEvent { nonce, head, back })
+}
+
+// ─── BLE commands ─────────────────────────────────────────────────────────────
+
+/// Scan for PoseFix BLE peripherals for 4 seconds.
+/// Returns [{address, name, rssi}] for each found device.
+#[tauri::command]
+async fn ble_scan(state: tauri::State<'_, BleState>) -> Result<Vec<BleScanResult>, String> {
+    let manager = BleManager::new().await.map_err(|e| e.to_string())?;
+    let adapters = manager.adapters().await.map_err(|e| e.to_string())?;
+    let adapter = adapters.into_iter().next().ok_or("No BLE adapter found")?;
+
+    let svc_uuid = Uuid::try_parse(POSEFIX_SERVICE_UUID).unwrap();
+    adapter
+        .start_scan(ScanFilter { services: vec![svc_uuid] })
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+    adapter.stop_scan().await.ok();
+
+    let peripherals = adapter.peripherals().await.map_err(|e| e.to_string())?;
+    let mut results = Vec::new();
+    for p in peripherals {
+        if let Ok(Some(props)) = p.properties().await {
+            results.push(BleScanResult {
+                address: p.id().to_string(),
+                name: props.local_name.unwrap_or_else(|| "PoseFix".to_string()),
+                rssi: props.rssi,
+            });
+        }
+    }
+
+    // Store adapter for later use in connect
+    *state.adapter.lock().map_err(|e| e.to_string())? = Some(adapter);
+    Ok(results)
+}
+
+/// Connect to a PoseFix peripheral by address (UUID string on macOS).
+/// Subscribes to the TX characteristic and spawns a background task that
+/// emits `ble://sensor-data` events to the frontend.
+#[tauri::command]
+async fn ble_connect(
+    address: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BleState>,
+) -> Result<(), String> {
+    // Tear down any existing connection
+    {
+        let mut h = state.task_handle.lock().map_err(|e| e.to_string())?;
+        if let Some(h) = h.take() { h.abort(); }
+    }
+    {
+        let prev = state.peripheral.lock().map_err(|e| e.to_string())?.take();
+        if let Some(p) = prev { let _ = p.disconnect().await; }
+    }
+
+    let adapter = {
+        let guard = state.adapter.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or("Run ble_scan first to get an adapter")?.clone()
+    };
+
+    let peripherals = adapter.peripherals().await.map_err(|e| e.to_string())?;
+    let peripheral = peripherals
+        .into_iter()
+        .find(|p| p.id().to_string() == address)
+        .ok_or("Peripheral not found — run ble_scan first")?;
+
+    peripheral.connect().await.map_err(|e| format!("connect: {e}"))?;
+    peripheral.discover_services().await.map_err(|e| format!("discover: {e}"))?;
+
+    let tx_uuid = Uuid::try_parse(POSEFIX_TX_UUID).unwrap();
+    let tx_char = peripheral
+        .services()
+        .into_iter()
+        .flat_map(|s| s.characteristics.into_iter())
+        .find(|c| c.uuid == tx_uuid)
+        .ok_or("TX characteristic not found — check sensor firmware")?;
+
+    peripheral.subscribe(&tx_char).await.map_err(|e| format!("subscribe: {e}"))?;
+
+    // Clone peripheral for the notification task; store original
+    let p_task = peripheral.clone();
+    let app_task = app.clone();
+
+    let handle = tokio::spawn(async move {
+        if let Ok(mut stream) = p_task.notifications().await {
+            while let Some(notif) = stream.next().await {
+                if notif.uuid == tx_uuid {
+                    if let Some(event) = parse_payload(&notif.value) {
+                        let _ = app_task.emit("ble://sensor-data", event);
+                    }
+                }
+            }
+        }
+        // Stream ended = disconnected
+        let _ = app_task.emit("ble://status", serde_json::json!({ "connected": false, "address": "" }));
+    });
+
+    *state.peripheral.lock().map_err(|e| e.to_string())? = Some(peripheral);
+    *state.task_handle.lock().map_err(|e| e.to_string())? = Some(handle);
+
+    app.emit("ble://status", serde_json::json!({ "connected": true, "address": address })).ok();
+    Ok(())
+}
+
+/// Send CMD_START (0x01) to the sensor — begins streaming Payload notifications.
+#[tauri::command]
+async fn ble_start(state: tauri::State<'_, BleState>) -> Result<(), String> {
+    let peripheral = {
+        let guard = state.peripheral.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or("Not connected")?.clone()
+    };
+
+    let rx_uuid = Uuid::try_parse(POSEFIX_RX_UUID).unwrap();
+    let rx_char = peripheral
+        .services()
+        .into_iter()
+        .flat_map(|s| s.characteristics.into_iter())
+        .find(|c| c.uuid == rx_uuid)
+        .ok_or("RX characteristic not found")?;
+
+    peripheral
+        .write(&rx_char, &[CMD_START], WriteType::WithoutResponse)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Send CMD_STOP (0x02) to the sensor — freezes streaming.
+#[tauri::command]
+async fn ble_stop(state: tauri::State<'_, BleState>) -> Result<(), String> {
+    let peripheral = {
+        let guard = state.peripheral.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().ok_or("Not connected")?.clone()
+    };
+
+    let rx_uuid = Uuid::try_parse(POSEFIX_RX_UUID).unwrap();
+    let rx_char = peripheral
+        .services()
+        .into_iter()
+        .flat_map(|s| s.characteristics.into_iter())
+        .find(|c| c.uuid == rx_uuid)
+        .ok_or("RX characteristic not found")?;
+
+    peripheral
+        .write(&rx_char, &[CMD_STOP], WriteType::WithoutResponse)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Disconnect from the current peripheral and stop the notification task.
+#[tauri::command]
+async fn ble_disconnect(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BleState>,
+) -> Result<(), String> {
+    {
+        let mut h = state.task_handle.lock().map_err(|e| e.to_string())?;
+        if let Some(h) = h.take() { h.abort(); }
+    }
+    let prev = state.peripheral.lock().map_err(|e| e.to_string())?.take();
+    if let Some(p) = prev { let _ = p.disconnect().await; }
+
+    app.emit("ble://status", serde_json::json!({ "connected": false, "address": "" })).ok();
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -649,6 +910,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(PoseServerState { process: server_process })
+        .manage(BleState::new())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
@@ -662,6 +924,11 @@ pub fn run() {
             analyze_multi_camera,
             launch_pose_server,
             stop_pose_server,
+            ble_scan,
+            ble_connect,
+            ble_start,
+            ble_stop,
+            ble_disconnect,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
