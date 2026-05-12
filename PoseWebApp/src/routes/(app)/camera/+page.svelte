@@ -501,40 +501,58 @@
             }
         }
 
-        if (!payload?.landmarks?.length || canvas.width === 0 || canvas.height === 0) return;
+    if (!payload?.landmarks?.length || canvas.width === 0 || canvas.height === 0) return;
 
-        const { landmarks } = payload;
-        const CW = canvas.width;
-        const CH = canvas.height;
-        // Use lower visibility threshold — YOLO keypoint confidence can be < 0.3 for
-        // partially visible joints. 0.1 keeps occluded keypoints visible on screen.
-        const VIS = 0.1;
+    const { landmarks } = payload;
+    const CW = canvas.width;
+    const CH = canvas.height;
+    const VIS = 0.1;
 
-        // Draw skeleton connections
-        ctx.strokeStyle = "rgba(56,189,248,0.9)";
-        ctx.lineWidth = 2.5;
-        for (const [a, b] of POSE_CONNECTIONS) {
-            const la = landmarks[a];
-            const lb = landmarks[b];
-            if (!la || !lb) continue;
-            if ((la.visibility ?? 1) < VIS || (lb.visibility ?? 1) < VIS) continue;
-            ctx.beginPath();
-            ctx.moveTo(la.x * CW, la.y * CH);
-            ctx.lineTo(lb.x * CW, lb.y * CH);
-            ctx.stroke();
-        }
+    // YOLO landmarks are normalized to the full video frame, but drawImage uses
+    // object-cover crop (center-crop to fill canvas). Project landmarks through
+    // the same crop so they land on the correct pixel.
+    let toLmX: (nx: number) => number;
+    let toLmY: (ny: number) => number;
+    if (videoEl && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+        const vw = videoEl.videoWidth;
+        const vh = videoEl.videoHeight;
+        const scale = Math.max(CW / vw, CH / vh);
+        const sw = CW / scale;
+        const sh = CH / scale;
+        const sx = (vw - sw) / 2;
+        const sy = (vh - sh) / 2;
+        toLmX = (nx) => (nx * vw - sx) * scale;
+        toLmY = (ny) => (ny * vh - sy) * scale;
+    } else {
+        toLmX = (nx) => nx * CW;
+        toLmY = (ny) => ny * CH;
+    }
 
-        // Draw landmark joints
-        for (const lm of landmarks) {
-            if ((lm.visibility ?? 1) < VIS) continue;
-            ctx.beginPath();
-            ctx.arc(lm.x * CW, lm.y * CH, 5, 0, Math.PI * 2);
-            ctx.fillStyle = "#f472b6";
-            ctx.fill();
-            ctx.strokeStyle = "rgba(255,255,255,0.7)";
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-        }
+    // Draw skeleton connections
+    ctx.strokeStyle = "rgba(56,189,248,0.9)";
+    ctx.lineWidth = 2.5;
+    for (const [a, b] of POSE_CONNECTIONS) {
+        const la = landmarks[a];
+        const lb = landmarks[b];
+        if (!la || !lb) continue;
+        if ((la.visibility ?? 1) < VIS || (lb.visibility ?? 1) < VIS) continue;
+        ctx.beginPath();
+        ctx.moveTo(toLmX(la.x), toLmY(la.y));
+        ctx.lineTo(toLmX(lb.x), toLmY(lb.y));
+        ctx.stroke();
+    }
+
+    // Draw landmark joints
+    for (const lm of landmarks) {
+        if ((lm.visibility ?? 1) < VIS) continue;
+        ctx.beginPath();
+        ctx.arc(toLmX(lm.x), toLmY(lm.y), 5, 0, Math.PI * 2);
+        ctx.fillStyle = "#f472b6";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.7)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
     }
 
     function startRaf() {
