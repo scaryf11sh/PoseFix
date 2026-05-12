@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
@@ -179,6 +180,21 @@ struct PostureAnalysis {
     warnings: Vec<String>,
 }
 
+// ─── Per-camera EMA state ────────────────────────────────────────────────────
+// Alpha 0.25: each new frame contributes 25%, history 75% → smooths over ~4-5 frames
+const EMA_ALPHA: f64 = 0.25;
+
+struct PostureState {
+    // camera_index → running EMA score (f64 for precision)
+    ema_scores: Mutex<HashMap<u32, f64>>,
+}
+
+impl PostureState {
+    fn new() -> Self {
+        PostureState { ema_scores: Mutex::new(HashMap::new()) }
+    }
+}
+
 // ─── Helper: minimum visibility threshold ───────────────────────────────────
 const VIS_MIN: f64 = 0.3;
 
@@ -186,22 +202,42 @@ fn visible(lm: &Landmark) -> bool {
     lm.visibility.unwrap_or(1.0) >= VIS_MIN
 }
 
-// ─── analyze_posture Tauri command ───────────────────────────────────────────
-/// Recibe landmarks normalizados [0,1] de YOLO (17 keypoints COCO) y aplica
-/// las reglas de yolo_vision_rules.json para calcular métricas posturales.
-///
-/// Keypoint indices (COCO):
+// ─── Continuous zone classifier ──────────────────────────────────────────────
+// Returns (level_str, status_code, continuous_score).
+// Score interpolates within each zone to avoid abrupt jumps at zone boundaries:
+//   optimal  zone → 100 down to 83
+//   warning  zone → 80 down to 42
+//   critical zone → 38 down to 8
+fn classify(value: f64, zones: &[(f64, f64)]) -> (&'static str, u8, f64) {
+    if zones.len() < 3 {
+        return ("optimal", 0, 100.0);
+    }
+    let (_, opt_hi)   = zones[0];
+    let (warn_lo, warn_hi) = zones[1];
+    let (crit_lo, _)  = zones[2];
+
+    if value <= opt_hi {
+        let t = (value / (opt_hi + 1e-9)).clamp(0.0, 1.0);
+        ("optimal", 0, 100.0 - t * 17.0)
+    } else if value <= warn_hi {
+        let t = ((value - warn_lo) / (warn_hi - warn_lo + 1e-9)).clamp(0.0, 1.0);
+        ("warning", 1, 80.0 - t * 38.0)
+    } else {
+        let t = ((value - crit_lo) / (crit_lo + 1e-9)).clamp(0.0, 1.0);
+        ("critical", 2, (38.0 - t * 30.0).max(8.0))
+    }
+}
+
+// ─── Internal posture computation (no EMA, no state) ────────────────────────
+/// Keypoint indices (COCO 17-point):
 ///   0 nose  1 left_eye  2 right_eye  3 left_ear  4 right_ear
-///   5 left_shoulder  6 right_shoulder
-#[tauri::command]
-fn analyze_posture(landmarks: Vec<Landmark>) -> PostureAnalysis {
+///   5 left_shoulder  6 right_shoulder  11 left_hip  12 right_hip
+fn compute_posture(landmarks: &[Landmark]) -> PostureAnalysis {
     let mut metrics: Vec<MetricResult> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
-    let mut metric_scores: Vec<u8> = Vec::new();
+    let mut metric_scores: Vec<f64> = Vec::new();
 
     // ── 1. Head Tilt Roll ────────────────────────────────────────────────────
-    // formula: atan2(|right_eye_y - left_eye_y|, |right_eye_x - left_eye_x|) × (180/π)
-    // keypoints: left_eye[1], right_eye[2]
     if landmarks.len() > 2 {
         let le = &landmarks[1];
         let re = &landmarks[2];
@@ -209,12 +245,11 @@ fn analyze_posture(landmarks: Vec<Landmark>) -> PostureAnalysis {
             let dx = (re.x - le.x).abs();
             let dy = (re.y - le.y).abs();
             let angle_deg = dy.atan2(dx).to_degrees();
-
-            let (level, code, pts) = classify(angle_deg, &[(0.0, 5.0), (6.0, 12.0), (13.0, 90.0)]);
+            let (level, code, score) = classify(angle_deg, &[(0.0, 5.0), (6.0, 12.0), (13.0, 90.0)]);
             if code > 0 {
                 warnings.push(format!("Head tilt detected: {:.1}°", angle_deg));
             }
-            metric_scores.push(pts);
+            metric_scores.push(score);
             metrics.push(MetricResult {
                 id:          "head_tilt_roll".into(),
                 name:        "Head Tilt (Roll)".into(),
@@ -226,8 +261,6 @@ fn analyze_posture(landmarks: Vec<Landmark>) -> PostureAnalysis {
     }
 
     // ── 2. Forward Head Posture ──────────────────────────────────────────────
-    // formula: |left_ear_x - left_shoulder_x| / |left_ear_y - left_shoulder_y|
-    // keypoints: left_ear[3], left_shoulder[5]
     if landmarks.len() > 5 {
         let ear = &landmarks[3];
         let sho = &landmarks[5];
@@ -235,12 +268,11 @@ fn analyze_posture(landmarks: Vec<Landmark>) -> PostureAnalysis {
             let dx = (ear.x - sho.x).abs();
             let dy = (ear.y - sho.y).abs();
             let ratio = if dy > 1e-4 { dx / dy } else { 0.0 };
-
-            let (level, code, pts) = classify(ratio, &[(0.0, 0.25), (0.26, 0.45), (0.46, 2.0)]);
+            let (level, code, score) = classify(ratio, &[(0.0, 0.25), (0.26, 0.45), (0.46, 2.0)]);
             if code > 0 {
                 warnings.push(format!("Forward head posture: ratio {:.2}", ratio));
             }
-            metric_scores.push(pts);
+            metric_scores.push(score);
             metrics.push(MetricResult {
                 id:          "forward_head_posture".into(),
                 name:        "Forward Head Posture".into(),
@@ -252,9 +284,6 @@ fn analyze_posture(landmarks: Vec<Landmark>) -> PostureAnalysis {
     }
 
     // ── 3. Shoulder Asymmetry ────────────────────────────────────────────────
-    // formula: |right_shoulder_y - left_shoulder_y|
-    //          / sqrt(Δx² + Δy²)
-    // keypoints: left_shoulder[5], right_shoulder[6]
     if landmarks.len() > 6 {
         let ls = &landmarks[5];
         let rs = &landmarks[6];
@@ -263,12 +292,11 @@ fn analyze_posture(landmarks: Vec<Landmark>) -> PostureAnalysis {
             let dy = (rs.y - ls.y).abs();
             let dist = (dx * dx + dy * dy).sqrt();
             let ratio = if dist > 1e-4 { dy / dist } else { 0.0 };
-
-            let (level, code, pts) = classify(ratio, &[(0.0, 0.05), (0.06, 0.15), (0.16, 1.0)]);
+            let (level, code, score) = classify(ratio, &[(0.0, 0.05), (0.06, 0.15), (0.16, 1.0)]);
             if code > 0 {
                 warnings.push(format!("Shoulder asymmetry: ratio {:.2}", ratio));
             }
-            metric_scores.push(pts);
+            metric_scores.push(score);
             metrics.push(MetricResult {
                 id:          "shoulder_asymmetry".into(),
                 name:        "Shoulder Asymmetry".into(),
@@ -279,90 +307,104 @@ fn analyze_posture(landmarks: Vec<Landmark>) -> PostureAnalysis {
         }
     }
 
-    // ── Overall posture score ────────────────────────────────────────────────
-    // optimal = 100 pts, warning = 60 pts, critical = 20 pts
-    // score = average of visible metric points
     let posture_score = if metric_scores.is_empty() {
         0u8
     } else {
-        let sum: u32 = metric_scores.iter().map(|&p| p as u32).sum();
-        (sum / metric_scores.len() as u32).min(100) as u8
+        let avg = metric_scores.iter().sum::<f64>() / metric_scores.len() as f64;
+        avg.round().clamp(0.0, 100.0) as u8
     };
 
     PostureAnalysis { posture_score, metrics, warnings }
 }
 
-// ─── Multi-camera fusion ─────────────────────────────────────────────────────
+// ─── analyze_posture Tauri command (single camera) ───────────────────────────
+#[tauri::command]
+fn analyze_posture(landmarks: Vec<Landmark>) -> PostureAnalysis {
+    compute_posture(&landmarks)
+}
+
+// ─── Multi-camera fusion with per-camera EMA ─────────────────────────────────
 
 #[derive(Deserialize)]
 struct CameraData {
-    #[allow(dead_code)]
     camera_index: u32,
     landmarks: Vec<Landmark>,
 }
 
-/// Fuses landmarks from multiple cameras using visibility-weighted average,
-/// then runs the same postural analysis as analyze_posture.
+/// For each camera: compute raw posture score → apply per-camera EMA.
+/// Final score = visibility-weighted average of smoothed per-camera scores.
+/// Metrics come from fused landmark analysis so they reflect the combined view.
 #[tauri::command]
-fn analyze_multi_camera(cameras: Vec<CameraData>) -> PostureAnalysis {
+fn analyze_multi_camera(
+    cameras: Vec<CameraData>,
+    state: tauri::State<'_, PostureState>,
+) -> PostureAnalysis {
     if cameras.is_empty() {
         return PostureAnalysis { posture_score: 0, metrics: vec![], warnings: vec![] };
     }
-    if cameras.len() == 1 {
-        return analyze_posture(cameras.into_iter().next().unwrap().landmarks);
-    }
 
-    // Find max landmark count across cameras
-    let max_kpts = cameras.iter().map(|c| c.landmarks.len()).max().unwrap_or(0);
-    if max_kpts == 0 {
-        return PostureAnalysis { posture_score: 0, metrics: vec![], warnings: vec![] };
-    }
-
-    // Build fused landmarks via visibility-weighted average per keypoint
-    let mut fused: Vec<Landmark> = Vec::with_capacity(max_kpts);
-    for i in 0..max_kpts {
-        let mut sum_x = 0.0_f64;
-        let mut sum_y = 0.0_f64;
-        let mut sum_z = 0.0_f64;
-        let mut sum_w = 0.0_f64;
-
+    // Step 1: per-camera raw score → EMA → collect (smoothed_score, visible_kpts)
+    let mut cam_smoothed: Vec<(f64, usize)> = Vec::with_capacity(cameras.len());
+    {
+        let mut emas = state.ema_scores.lock().unwrap_or_else(|p| p.into_inner());
         for cam in &cameras {
-            if i < cam.landmarks.len() {
-                let lm = &cam.landmarks[i];
-                let w = lm.visibility.unwrap_or(1.0).max(0.0);
-                sum_x += lm.x * w;
-                sum_y += lm.y * w;
-                sum_z += lm.z * w;
-                sum_w += w;
+            let raw = compute_posture(&cam.landmarks).posture_score as f64;
+            let visible_kpts = cam.landmarks.iter()
+                .filter(|lm| lm.visibility.unwrap_or(1.0) >= VIS_MIN)
+                .count();
+
+            let ema = emas.entry(cam.camera_index)
+                .and_modify(|prev| *prev = EMA_ALPHA * raw + (1.0 - EMA_ALPHA) * *prev)
+                .or_insert(raw);
+
+            cam_smoothed.push((*ema, visible_kpts));
+        }
+    }
+
+    // Step 2: visibility-weighted average of smoothed scores
+    let total_vis: usize = cam_smoothed.iter().map(|(_, v)| *v).sum();
+    let fused_score = if total_vis == 0 {
+        cam_smoothed.iter().map(|(s, _)| s).sum::<f64>() / cam_smoothed.len() as f64
+    } else {
+        cam_smoothed.iter().map(|(s, v)| s * *v as f64).sum::<f64>() / total_vis as f64
+    };
+
+    // Step 3: metrics from fused landmark analysis
+    let metrics_source = if cameras.len() == 1 {
+        compute_posture(&cameras[0].landmarks)
+    } else {
+        let max_kpts = cameras.iter().map(|c| c.landmarks.len()).max().unwrap_or(0);
+        let mut fused: Vec<Landmark> = Vec::with_capacity(max_kpts);
+        for i in 0..max_kpts {
+            let mut sum_x = 0.0_f64;
+            let mut sum_y = 0.0_f64;
+            let mut sum_z = 0.0_f64;
+            let mut sum_w = 0.0_f64;
+            for cam in &cameras {
+                if i < cam.landmarks.len() {
+                    let lm = &cam.landmarks[i];
+                    let w = lm.visibility.unwrap_or(1.0).max(0.0);
+                    sum_x += lm.x * w;
+                    sum_y += lm.y * w;
+                    sum_z += lm.z * w;
+                    sum_w += w;
+                }
             }
-        }
-
-        let (x, y, z, v) = if sum_w > 1e-9 {
-            (sum_x / sum_w, sum_y / sum_w, sum_z / sum_w, sum_w / cameras.len() as f64)
-        } else {
-            (0.0, 0.0, 0.0, 0.0)
-        };
-
-        fused.push(Landmark { x, y, z, visibility: Some(v) });
-    }
-
-    analyze_posture(fused)
-}
-
-/// Maps a value to (level_str, status_code, score_points) using ordered zones.
-/// zones: [(min, max), ...] for codes 0, 1, 2
-fn classify(value: f64, zones: &[(f64, f64)]) -> (&'static str, u8, u8) {
-    for (code, &(lo, hi)) in zones.iter().enumerate() {
-        if value >= lo && value <= hi {
-            return match code {
-                0 => ("optimal",  0, 100),
-                1 => ("warning",  1,  60),
-                _ => ("critical", 2,  20),
+            let (x, y, z, v) = if sum_w > 1e-9 {
+                (sum_x / sum_w, sum_y / sum_w, sum_z / sum_w, sum_w / cameras.len() as f64)
+            } else {
+                (0.0, 0.0, 0.0, 0.0)
             };
+            fused.push(Landmark { x, y, z, visibility: Some(v) });
         }
+        compute_posture(&fused)
+    };
+
+    PostureAnalysis {
+        posture_score: fused_score.round().clamp(0.0, 100.0) as u8,
+        metrics: metrics_source.metrics,
+        warnings: metrics_source.warnings,
     }
-    // Beyond all zones → critical
-    ("critical", 2, 20)
 }
 
 #[tauri::command]
@@ -384,6 +426,7 @@ const CMD_STOP:  u8 = 0x02;
 // ─── BLE managed state ───────────────────────────────────────────────────────
 
 struct BleState {
+    manager:     Mutex<Option<BleManager>>,
     adapter:     Mutex<Option<Adapter>>,
     peripheral:  Mutex<Option<Peripheral>>,
     task_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -392,6 +435,7 @@ struct BleState {
 impl BleState {
     fn new() -> Self {
         BleState {
+            manager:     Mutex::new(None),
             adapter:     Mutex::new(None),
             peripheral:  Mutex::new(None),
             task_handle: Mutex::new(None),
@@ -469,32 +513,50 @@ fn parse_payload(data: &[u8]) -> Option<BleSensorEvent> {
 /// Returns [{address, name, rssi}] for each found device.
 #[tauri::command]
 async fn ble_scan(state: tauri::State<'_, BleState>) -> Result<Vec<BleScanResult>, String> {
-    let manager = BleManager::new().await.map_err(|e| e.to_string())?;
-    let adapters = manager.adapters().await.map_err(|e| e.to_string())?;
-    let adapter = adapters.into_iter().next().ok_or("No BLE adapter found")?;
+    // Run on a dedicated OS thread via spawn_blocking so that:
+    //   1. CoreBluetooth (CBCentralManager) gets a proper run-loop context on macOS.
+    //   2. ObjC exceptions / Rust panics that btleplug raises on unauthorised / BT-off
+    //      are caught by catch_unwind instead of SIGABRTing the whole process.
+    let handle = tokio::runtime::Handle::current();
+    let task = tokio::task::spawn_blocking(move || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            handle.block_on(async {
+                let manager = BleManager::new().await.map_err(|e| e.to_string())?;
+                let adapters = manager.adapters().await.map_err(|e| e.to_string())?;
+                let adapter = adapters.into_iter().next()
+                    .ok_or_else(|| "No BLE adapter found".to_string())?;
 
-    let svc_uuid = Uuid::try_parse(POSEFIX_SERVICE_UUID).unwrap();
-    adapter
-        .start_scan(ScanFilter { services: vec![svc_uuid] })
+                let svc_uuid = Uuid::try_parse(POSEFIX_SERVICE_UUID).unwrap();
+                adapter
+                    .start_scan(ScanFilter { services: vec![svc_uuid] })
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+                adapter.stop_scan().await.ok();
+
+                let peripherals = adapter.peripherals().await.map_err(|e| e.to_string())?;
+                let mut results = Vec::new();
+                for p in &peripherals {
+                    if let Ok(Some(props)) = p.properties().await {
+                        results.push(BleScanResult {
+                            address: p.id().to_string(),
+                            name: props.local_name.unwrap_or_else(|| "PoseFix".to_string()),
+                            rssi: props.rssi,
+                        });
+                    }
+                }
+                Ok::<(BleManager, Adapter, Vec<BleScanResult>), String>((manager, adapter, results))
+            })
+        }))
+        .unwrap_or_else(|_| Err("BLE scan panicked (Bluetooth may be off or unauthorized)".to_string()))
+    });
+
+    let (manager, adapter, results) = task
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("BLE task join error: {e}"))??;
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
-    adapter.stop_scan().await.ok();
-
-    let peripherals = adapter.peripherals().await.map_err(|e| e.to_string())?;
-    let mut results = Vec::new();
-    for p in peripherals {
-        if let Ok(Some(props)) = p.properties().await {
-            results.push(BleScanResult {
-                address: p.id().to_string(),
-                name: props.local_name.unwrap_or_else(|| "PoseFix".to_string()),
-                rssi: props.rssi,
-            });
-        }
-    }
-
-    // Store adapter for later use in connect
+    *state.manager.lock().map_err(|e| e.to_string())? = Some(manager);
     *state.adapter.lock().map_err(|e| e.to_string())? = Some(adapter);
     Ok(results)
 }
@@ -626,6 +688,82 @@ async fn ble_disconnect(
 
     app.emit("ble://status", serde_json::json!({ "connected": false, "address": "" })).ok();
     Ok(())
+}
+
+#[derive(Deserialize)]
+struct AiRequest {
+    provider: String,
+    api_key: String,
+    model: String,
+    prompt: String,
+    base_url: Option<String>, // for ollama custom host
+}
+
+#[tauri::command]
+async fn call_ai(req: AiRequest) -> Result<String, String> {
+    let client = reqwest::Client::new();
+
+    match req.provider.as_str() {
+        "openai" => {
+            let res = client
+                .post("https://api.openai.com/v1/chat/completions")
+                .bearer_auth(&req.api_key)
+                .json(&serde_json::json!({
+                    "model": req.model,
+                    "messages": [{"role": "user", "content": req.prompt}],
+                    "max_tokens": 300
+                }))
+                .send().await.map_err(|e| e.to_string())?;
+            let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+            Ok(body["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string())
+        }
+        "anthropic" => {
+            let res = client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", &req.api_key)
+                .header("anthropic-version", "2023-06-01")
+                .json(&serde_json::json!({
+                    "model": req.model,
+                    "max_tokens": 300,
+                    "messages": [{"role": "user", "content": req.prompt}]
+                }))
+                .send().await.map_err(|e| e.to_string())?;
+            let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+            Ok(body["content"][0]["text"].as_str().unwrap_or("").to_string())
+        }
+        "gemini" => {
+            let model = &req.model;
+            let url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={}",
+                req.api_key
+            );
+            let res = client
+                .post(&url)
+                .json(&serde_json::json!({
+                    "contents": [{"parts": [{"text": req.prompt}]}]
+                }))
+                .send().await.map_err(|e| e.to_string())?;
+            let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+            Ok(body["candidates"][0]["content"]["parts"][0]["text"].as_str().unwrap_or("").to_string())
+        }
+        "ollama" => {
+            let base = req.base_url.as_deref().unwrap_or("http://localhost:11434");
+            if !base.starts_with("http://localhost") && !base.starts_with("http://127.0.0.1") {
+                return Err("Ollama base URL must be a local address (localhost or 127.0.0.1)".to_string());
+            }
+            let res = client
+                .post(format!("{base}/api/generate"))
+                .json(&serde_json::json!({
+                    "model": req.model,
+                    "prompt": req.prompt,
+                    "stream": false
+                }))
+                .send().await.map_err(|e| e.to_string())?;
+            let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+            Ok(body["response"].as_str().unwrap_or("").to_string())
+        }
+        other => Err(format!("Unknown provider: {other}"))
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -911,6 +1049,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(PoseServerState { process: server_process })
         .manage(BleState::new())
+        .manage(PostureState::new())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
@@ -922,6 +1061,7 @@ pub fn run() {
             save_avatar,
             analyze_posture,
             analyze_multi_camera,
+            call_ai,
             launch_pose_server,
             stop_pose_server,
             ble_scan,
