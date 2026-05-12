@@ -1,4 +1,6 @@
 .claude/
+.maestri/
+graphify-out/
 node_modules
 PoseWebApp/pose-server/venv
 

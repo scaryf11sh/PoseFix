@@ -139,7 +139,7 @@
                     />
                 </svg>
             </div>
-            <span class="text-base font-bold text-sky-400">Glacier</span>
+            <span class="text-base font-bold text-sky-400">PoseFix</span>
         </div>
         <button
             aria-label="Help"
@@ -522,7 +522,7 @@
     <!-- Footer -->
     <div class="flex items-center justify-center gap-6 py-4 px-6 flex-wrap">
         <p class="text-[10px] uppercase tracking-widest text-slate-400">
-            © 2024 Glacier Ergonomics
+        @2026 PoseFix
         </p>
         <div class="flex gap-4">
             {#each ["Privacy", "Terms", "Support"] as link}
