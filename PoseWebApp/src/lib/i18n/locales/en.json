@@ -90,7 +90,10 @@
             "other": "Other"
         },
         "username": "Username",
-        "username_hint": "This is how others will see you. No spaces."
+        "username_hint": "This is how others will see you. No spaces.",
+        "scan_error_generic": "An error occurred during the BLE scan. Please try again.",
+        "scan_error_bluetooth": "Bluetooth is disabled or unavailable. Please enable it in your system settings.",
+        "scan_error_unauthorized": "Bluetooth access was denied. Please grant permission in your system settings."
     },
     "dashboard": {
         "title": "Daily Overview",
@@ -137,6 +140,18 @@
             "good": "GOOD POSTURE",
             "fair": "FAIR POSTURE",
             "poor": "POOR POSTURE"
+        },
+        "tips": {
+            "fatigue_high": "High fatigue detected. Look at something 20 feet away for 20 seconds and take a 5-minute break.",
+            "posture_poor": "Your posture score just dropped. Check your lumbar support and sit with your hips at 90°.",
+            "forward_head": "Your head is projecting forward. Pull your chin back slightly — imagine a string pulling the crown of your head up.",
+            "session_long": "You've been sitting for over 90 minutes. Stand up, walk for 2 minutes, and reset your posture.",
+            "break_needed": "You're due for a break. A short walk every hour improves focus and reduces spinal load by 40%.",
+            "head_tilt": "Your head is tilted to one side. Try to level your ears with your shoulders and relax your neck.",
+            "shoulder_asym": "One shoulder is higher than the other. Relax both shoulders down and back away from your ears.",
+            "blink_low": "You're blinking less than usual. Remember the 20-20-20 rule: every 20 min, look 20 feet away for 20 seconds.",
+            "posture_fair": "Your posture is fair. Small adjustments: move your screen to eye level and keep your feet flat on the floor.",
+            "posture_great": "Excellent posture streak! Keep it up — consistent posture reduces injury risk significantly."
         }
     },
     "monitor": {

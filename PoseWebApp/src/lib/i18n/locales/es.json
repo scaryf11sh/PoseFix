@@ -90,7 +90,10 @@
             "other": "Otro"
         },
         "username": "Nombre de Usuario",
-        "username_hint": "Así te verán los demás. Sin espacios."
+        "username_hint": "Así te verán los demás. Sin espacios.",
+        "scan_error_generic": "Ocurrió un error durante el escaneo BLE. Por favor, inténtalo de nuevo.",
+        "scan_error_bluetooth": "El Bluetooth está desactivado o no disponible. Por favor, actívalo en la configuración del sistema.",
+        "scan_error_unauthorized": "El acceso al Bluetooth fue denegado. Por favor, concede el permiso en la configuración del sistema."
     },
     "dashboard": {
         "title": "Resumen Diario",
@@ -137,6 +140,18 @@
             "good": "BUENA POSTURA",
             "fair": "POSTURA REGULAR",
             "poor": "POSTURA DEFICIENTE"
+        },
+        "tips": {
+            "fatigue_high": "Alta fatiga detectada. Mira algo a 6 metros durante 20 segundos y toma un descanso de 5 minutos.",
+            "posture_poor": "Tu puntaje de postura bajó. Revisa tu soporte lumbar y siéntate con las caderas a 90°.",
+            "forward_head": "Tu cabeza está proyectada hacia adelante. Lleva el mentón ligeramente hacia atrás.",
+            "session_long": "Llevas más de 90 minutos sentado. Levántate, camina 2 minutos y corrige tu postura.",
+            "break_needed": "Es hora de un descanso. Caminar un poco cada hora mejora la concentración y reduce la carga espinal.",
+            "head_tilt": "Tienes la cabeza inclinada. Intenta alinear tus orejas con los hombros y relaja el cuello.",
+            "shoulder_asym": "Un hombro está más alto que el otro. Relaja ambos hombros hacia abajo y atrás.",
+            "blink_low": "Estás parpadeando menos de lo normal. Recuerda la regla 20-20-20: cada 20 min, mira a 6 m por 20 s.",
+            "posture_fair": "Tu postura es aceptable. Ajustes pequeños: lleva la pantalla a nivel de ojos y apoya bien los pies.",
+            "posture_great": "¡Excelente racha de buena postura! Mantenerla reduce significativamente el riesgo de lesiones."
         }
     },
     "monitor": {

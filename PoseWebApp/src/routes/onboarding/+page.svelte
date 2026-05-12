@@ -1,7 +1,9 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { theme, type ThemeMode } from "$lib/stores/theme";
     import { goto } from "$app/navigation";
     import { _ } from "svelte-i18n";
+    import { invoke } from "@tauri-apps/api/core";
 
     // --- Step ---
     let step = $state(1);
@@ -24,44 +26,75 @@
     ];
 
     // --- Step 2: Hardware ---
-    const cameras = [
-        "FaceTime HD Camera (Built-in)",
-        "External USB WebCam (Logitech C920)",
-        "No camera",
-    ];
-    let selectedCamera = $state(cameras[0]);
-    let showCameraMenu = $state(false);
+    let cameras = $state<{deviceId: string, label: string, enabled: boolean}[]>([]);
+    let sensors = $state<{id: string, name: string, sub: string, status: string, icon: string, iconColor: string, enabled: boolean}[]>([]);
+    let isScanningSensors = $state(false);
+    let scanError = $state("");
 
-    type SensorStatus = "Connected" | "Ready" | "Searching...";
-    let sensors = $state([
-        {
-            id: 1,
-            name: "L-Spine Tracker",
-            sub: "BT Low Energy",
-            status: "Connected" as SensorStatus,
-            icon: "M12 2a7 7 0 0 1 5 11.9V17a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1v-3.1A7 7 0 0 1 12 2z",
-            iconColor: "text-sky-400 bg-sky-400/10",
-            enabled: true,
-        },
-        {
-            id: 2,
-            name: "Neck Pivot Pro",
-            sub: "USB-C",
-            status: "Ready" as SensorStatus,
-            icon: "M12 2v20M2 12h20",
-            iconColor: "text-purple-400 bg-purple-400/10",
-            enabled: false,
-        },
-        {
-            id: 3,
-            name: "PoseFix Band 2.0",
-            sub: "BT Low Energy",
-            status: "Connected" as SensorStatus,
-            icon: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z",
-            iconColor: "text-green-400 bg-green-400/10",
-            enabled: true,
-        },
-    ]);
+
+    async function fetchCameras() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const availableCameras = devices
+                .filter(d => d.kind === 'videoinput')
+                .map(d => ({
+                    deviceId: d.deviceId,
+                    label: d.label || `Camera ${cameras.length + 1}`,
+                    enabled: false
+                }));
+            
+            const saved = localStorage.getItem('posefix_enabled_cameras');
+            if (saved) {
+                const enabledIds = JSON.parse(saved);
+                cameras = availableCameras.map(c => ({
+                    ...c,
+                    enabled: enabledIds.includes(c.deviceId)
+                }));
+            } else {
+                cameras = availableCameras;
+            }
+        } catch (e) {
+            console.error("Failed to fetch cameras", e);
+        }
+    }
+
+    async function scanSensors() {
+        isScanningSensors = true;
+        scanError = "";
+        try {
+            const result = await invoke("ble_scan");
+            if (result && result.length > 0) {
+                sensors = result.map((s: any) => ({
+                    id: s.address,
+                    name: s.name,
+                    sub: "BT Low Energy",
+                    status: "Ready",
+                    icon: "M12 2a7 7 0 0 1 5 11.9V17a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1v-3.1A7 7 0 0 1 12 2z",
+                    iconColor: "text-sky-400 bg-sky-400/10",
+                    enabled: false,
+                }));
+            } else {
+                sensors = [];
+            }
+        } catch (e) {
+            const errStr = String(e);
+            console.error("BLE scan failed", e);
+            if (errStr.includes("unauthorized")) {
+                scanError = $_("onboarding.scan_error_unauthorized");
+            } else if (errStr.includes("Bluetooth")) {
+                scanError = $_("onboarding.scan_error_bluetooth");
+            } else {
+                scanError = $_("onboarding.scan_error_generic");
+            }
+            sensors = [];
+        } finally {
+            isScanningSensors = false;
+        }
+    }
+
+    onMount(() => {
+        fetchCameras();
+    });
 
     // --- Step 3: Preferences ---
     let prefs = $state([
@@ -107,6 +140,12 @@
     );
 
     function next() {
+        if (step === 2) {
+            const enabledCameras = cameras
+                .filter(c => c.enabled)
+                .map(c => c.deviceId);
+            localStorage.setItem('posefix_enabled_cameras', JSON.stringify(enabledCameras));
+        }
         if (step < totalSteps) step++;
         else goto("/");
     }
@@ -379,112 +418,276 @@
                 </div>
 
                 <!-- ===================== STEP 2 ===================== -->
-            {:else if step === 2}
-                <div class="mb-6">
-                    <h1
-                        class="text-2xl font-bold text-slate-900 dark:text-white mb-1"
-                    >
-                        Connect Your Hardware
-                    </h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">
-                        PoseFix syncs with your devices to monitor posture in
-                        real-time.
-                    </p>
-                </div>
+             {:else if step === 2}
+                 <div class="mb-6">
+                     <h1
+                         class="text-2xl font-bold text-slate-900 dark:text-white mb-1"
+                     >
+                         Connect Your Hardware
+                     </h1>
+                     <p class="text-sm text-slate-500 dark:text-slate-400">
+                         PoseFix syncs with your devices to monitor posture in
+                         real-time.
+                     </p>
+                 </div>
+ 
+                 <!-- Available Cameras -->
+                 <div class="mb-5">
+                     <label
+                         class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2"
+                         >Available Cameras</label
+                     >
+                     <div class="space-y-2">
+                         {#each cameras as cam}
+                             <div
+                                 class="flex items-center justify-between px-3 py-3 rounded-xl
+                                 bg-slate-50 dark:bg-slate-800
+                                 border border-slate-100 dark:border-slate-700"
+                             >
+                                 <div class="flex items-center gap-3">
+                                     <div class="w-8 h-8 rounded-lg bg-sky-400/10 flex items-center justify-center text-sky-400 shrink-0">
+                                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                                             <circle cx="12" cy="13" r="4" />
+                                         </svg>
+                                     </div>
+                                     <span class="text-sm font-medium text-slate-800 dark:text-white">{cam.label}</span>
+                                 </div>
+                                 <button
+                                     onclick={() => (cam.enabled = !cam.enabled)}
+                                     class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0
+                                         {cam.enabled ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
+                                 >
+                                     <span
+                                         class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
+                                         {cam.enabled ? 'translate-x-5' : 'translate-x-0'}"
+                                     ></span>
+                                 </button>
+                             </div>
+                         {/each}
+                         {#if cameras.length === 0}
+                             <p class="text-xs text-center py-4 text-slate-400 italic">No cameras found</p>
+                         {/if}
+                     </div>
+                 </div>
+ 
+                 <!-- Sensors Section -->
+                 <div>
+                     <div class="flex items-center justify-between mb-2">
+                         <label
+                             class="text-[10px] font-bold uppercase tracking-wider text-slate-400"
+                             >Sensors</label
+                         >
+                         {#if isScanningSensors}
+                             <span
+                                 class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sky-400"
+                             >
+                                 <span
+                                     class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"
+                                 ></span>
+                                 Scanning...
+                             </span>
+                         {/if}
+                     </div>
+                     
+                     <div class="space-y-2">
+                         {#if sensors.length > 0}
+                             {#each sensors as s}
+                                 <div
+                                     class="flex items-center gap-3 px-3 py-3 rounded-xl
+                                     bg-slate-50 dark:bg-slate-800
+                                     border border-slate-100 dark:border-slate-700"
+                                 >
+                                     <div
+                                         class="w-9 h-9 rounded-xl {s.iconColor} flex items-center justify-center shrink-0"
+                                     >
+                                         <svg
+                                             xmlns="http://www.w3.org/2000/svg"
+                                             class="w-4 h-4"
+                                             viewBox="0 0 24 24"
+                                             fill="none"
+                                             stroke="currentColor"
+                                             stroke-width="2"
+                                         >
+                                             <path d={s.icon} />
+                                         </svg>
+                                     </div>
+                                     <div class="flex-1 min-w-0">
+                                         <p
+                                             class="text-sm font-semibold text-slate-800 dark:text-white"
+                                         >
+                                             {s.name}
+                                         </p>
+                                         <p class="text-xs text-slate-400">
+                                             {s.sub} • {s.status}
+                                         </p>
+                                     </div>
+                                     <button
+                                         aria-label=""
+                                         onclick={() => (s.enabled = !s.enabled)}
+                                         class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0
+                                             {s.enabled
+                                             ? 'bg-sky-400'
+                                             : 'bg-slate-200 dark:bg-slate-600'}"
+                                     >
+                                         <span
+                                             class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
+                                             {s.enabled
+                                                 ? 'translate-x-5'
+                                                 : 'translate-x-0'}"
+                                         ></span>
+                                     </button>
+                                 </div>
+                             {/each}
+                          {:else if !isScanningSensors}
+                              <div class="flex flex-col items-center justify-center py-6 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700">
+                                  {#if scanError}
+                                      <p class="text-xs text-red-500 dark:text-red-400 text-center mb-4 font-medium">
+                                          {scanError}
+                                      </p>
+                                  {:else}
+                                      <p class="text-xs text-slate-500 dark:text-slate-400 text-center mb-4">
+                                          No sensors found. You can add them later in Settings.
+                                      </p>
+                                  {/if}
+                                  <button
+                                      onclick={scanSensors}
+                                      class="px-4 py-2 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 hover:border-sky-400 transition-all active:scale-95"
+                                  >
+                                      Scan for sensors
+                                  </button>
+                              </div>
+                          {/if}
+                     </div>
+                 </div>
 
-                <!-- Primary Camera -->
+
+                <!-- Available Cameras -->
                 <div class="mb-5">
                     <label
-                        for="ob_camera_input"
                         class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2"
-                        >Primary Camera</label
+                        >Available Cameras</label
                     >
-                    <div class="relative">
-                        <button
-                            onclick={() => (showCameraMenu = !showCameraMenu)}
-                            class="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm text-left
-                                bg-slate-50 dark:bg-slate-800
-                                border border-slate-200 dark:border-slate-700
-                                text-slate-800 dark:text-white
-                                hover:border-sky-400 transition-all"
-                        >
-                            {selectedCamera}
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                class="w-4 h-4 text-slate-400 transition-transform {showCameraMenu
-                                    ? 'rotate-180'
-                                    : ''}"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <polyline points="6 9 12 15 18 9" />
-                            </svg>
-                        </button>
-                        {#if showCameraMenu}
+                    <div class="space-y-2">
+                        {#each cameras as cam}
                             <div
-                                class="absolute top-full mt-1 left-0 right-0 z-10 rounded-xl shadow-lg
-                                bg-white dark:bg-slate-800
-                                border border-slate-100 dark:border-slate-700 overflow-hidden"
+                                class="flex items-center justify-between px-3 py-3 rounded-xl
+                                bg-slate-50 dark:bg-slate-800
+                                border border-slate-100 dark:border-slate-700"
                             >
-                                {#each cameras as cam}
-                                    <button
-                                        onclick={() => {
-                                            selectedCamera = cam;
-                                            showCameraMenu = false;
-                                        }}
-                                        class="w-full text-left px-4 py-2.5 text-sm transition-colors
-                                            {selectedCamera === cam
-                                            ? 'text-sky-400 font-semibold bg-sky-50 dark:bg-sky-900/20'
-                                            : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'}"
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-lg bg-sky-400/10 flex items-center justify-center text-sky-400 shrink-0">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                                            <circle cx="12" cy="13" r="4" />
+                                        </svg>
+                                    </div>
+                                    <span class="text-sm font-medium text-slate-800 dark:text-white">{cam.label}</span>
+                                </div>
+                                <button
+                                    onclick={() => (cam.enabled = !cam.enabled)}
+                                    class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0
+                                        {cam.enabled ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
+                                >
+                                    <span
+                                        class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
+                                        {cam.enabled ? 'translate-x-5' : 'translate-x-0'}"
+                                    ></span>
+                                </button>
+                            </div>
+                        {/each}
+                        {#if cameras.length === 0}
+                            <p class="text-xs text-center py-4 text-slate-400 italic">No cameras found</p>
+                        {/if}
+                    </div>
+                </div>
+
+
+                <!-- Sensors Section -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label
+                            class="text-[10px] font-bold uppercase tracking-wider text-slate-400"
+                            >Sensors</label
+                        >
+                        {#if isScanningSensors}
+                            <span
+                                class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sky-400"
+                            >
+                                <span
+                                    class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"
+                                ></span>
+                                Scanning...
+                            </span>
+                        {/if}
+                    </div>
+                    
+                    <div class="space-y-2">
+                        {#if sensors.length > 0}
+                            {#each sensors as s}
+                                <div
+                                    class="flex items-center gap-3 px-3 py-3 rounded-xl
+                                    bg-slate-50 dark:bg-slate-800
+                                    border border-slate-100 dark:border-slate-700"
+                                >
+                                    <div
+                                        class="w-9 h-9 rounded-xl {s.iconColor} flex items-center justify-center shrink-0"
                                     >
-                                        {cam}
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            class="w-4 h-4"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                        >
+                                            <path d={s.icon} />
+                                        </svg>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p
+                                            class="text-sm font-semibold text-slate-800 dark:text-white"
+                                        >
+                                            {s.name}
+                                        </p>
+                                        <p class="text-xs text-slate-400">
+                                            {s.sub} • {s.status}
+                                        </p>
+                                    </div>
+                                    <button
+                                        aria-label=""
+                                        onclick={() => (s.enabled = !s.enabled)}
+                                        class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0
+                                            {s.enabled
+                                            ? 'bg-sky-400'
+                                            : 'bg-slate-200 dark:bg-slate-600'}"
+                                    >
+                                        <span
+                                            class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
+                                            {s.enabled
+                                                ? 'translate-x-5'
+                                                : 'translate-x-0'}"
+                                        ></span>
                                     </button>
-                                {/each}
+                                </div>
+                            {/each}
+                        {:else if !isScanningSensors}
+                            <div class="flex flex-col items-center justify-center py-6 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700">
+                                <p class="text-xs text-slate-500 dark:text-slate-400 text-center mb-4">
+                                    No sensors found. You can add them later in Settings.
+                                </p>
+                                <button
+                                    onclick={scanSensors}
+                                    class="px-4 py-2 rounded-lg text-xs font-bold bg-white dark:bg-slate-700 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 hover:border-sky-400 transition-all active:scale-95"
+                                >
+                                    Scan for sensors
+                                </button>
                             </div>
                         {/if}
                     </div>
                 </div>
 
-                <!-- Active Sensors -->
-                <div>
-                    <div class="flex items-center justify-between mb-2">
-                        <label
-                            for="ob_sensors_input"
-                            class="text-[10px] font-bold uppercase tracking-wider text-slate-400"
-                            >Active Sensors</label
-                        >
-                        <span
-                            class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sky-400"
-                        >
-                            <span
-                                class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"
-                            ></span>
-                            Scanning
-                        </span>
-                    </div>
-                    <div class="space-y-2">
-                        {#each sensors as s}
-                            <div
-                                class="flex items-center gap-3 px-3 py-3 rounded-xl
-                                bg-slate-50 dark:bg-slate-800
-                                border border-slate-100 dark:border-slate-700"
-                            >
-                                <div
-                                    class="w-9 h-9 rounded-xl {s.iconColor} flex items-center justify-center shrink-0"
-                                >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        class="w-4 h-4"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
-                                        <path d={s.icon} />
-                                    </svg>
-                                </div>
+
                                 <div class="flex-1 min-w-0">
                                     <p
                                         class="text-sm font-semibold text-slate-800 dark:text-white"
