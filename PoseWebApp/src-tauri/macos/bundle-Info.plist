@@ -2,8 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleExecutable</key>
+    <string>PoseFix</string>
     <key>CFBundleIdentifier</key>
     <string>com.posefix.dev</string>
+    <key>CFBundleName</key>
+    <string>PoseFix</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
     <key>NSCameraUsageDescription</key>
     <string>PoseFix needs camera access to monitor your posture in real time.</string>
     <key>NSMicrophoneUsageDescription</key>

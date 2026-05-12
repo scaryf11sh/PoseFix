@@ -1,0 +1,9 @@
+# macOS: use a linker wrapper that re-signs the binary after each link.
+# This gives the binary the correct identifier (com.posefix.dev) and
+# binds Info.plist to the signature — required for TCC permission dialogs
+# (Bluetooth, Camera) to appear in Tauri dev mode on macOS 13+.
+[target.aarch64-apple-darwin]
+linker = "/Users/scaryfish/Documents/uni/6to/Proyectos/PoseFix/PoseWebApp/src-tauri/macos/linker-wrapper.sh"
+
+[target.x86_64-apple-darwin]
+linker = "/Users/scaryfish/Documents/uni/6to/Proyectos/PoseFix/PoseWebApp/src-tauri/macos/linker-wrapper.sh"

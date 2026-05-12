@@ -29,7 +29,9 @@
         "active": true,
         "targets": "all",
         "macOS": {
-            "infoPlist": "Info.plist"
+            "infoPlist": "Info.plist",
+            "entitlements": "macos/entitlements.plist",
+            "signingIdentity": "-"
         },
         "resources": {
             "../pose-server/pose_server.py": "pose_server.py",
