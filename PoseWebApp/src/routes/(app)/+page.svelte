@@ -22,6 +22,7 @@
     import { getCurrentUser } from "$lib/auth";
     import { userStore } from "$lib/stores/user";
     import { sessionStore, livePostureScore } from "$lib/stores/session";
+    import { selectTip, type TipState } from '$lib/tips';
     import {
         getWeeklyStats,
         getSessionStats,
@@ -79,12 +80,18 @@
     let seconds = $state(0);
     let timerInterval: ReturnType<typeof setInterval> | null = null;
 
+    let currentTipId = $state<string | null>(null);
+
     let timerStr = $derived(() => {
         const h = Math.floor(seconds / 3600).toString().padStart(2, "0");
         const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, "0");
         const s = (seconds % 60).toString().padStart(2, "0");
         return `${h} : ${m} : ${s}`;
     });
+
+    let tipText = $derived(
+        currentTipId ? $_(`dashboard.tips.${currentTipId}`) : $_('dashboard.tips.posture_fair')
+    );
 
     // Next break: every 25 min (Pomodoro-style)
     let nextBreakMin = $derived(() => {
@@ -310,56 +317,86 @@
     }
 
     // ─── Mount ───────────────────────────────────────────────────────────────
-    onMount(async () => {
-        const user = await getCurrentUser();
-        if (!user) {
-            goto("/auth");
-            return;
-        }
-        if (!$userStore.user) userStore.setUser(user);
-        userId = user.id;
-        postureGoal = user.posture_goal ?? 80;
+    onMount(() => {
+        (async () => {
+            const user = await getCurrentUser();
+            if (!user) {
+                goto("/auth");
+                return;
+            }
+            if (!$userStore.user) userStore.setUser(user);
+            userId = user.id;
+            postureGoal = user.posture_goal ?? 80;
 
-        await loadStats();
-        animateScore(score);
+            await loadStats();
+            animateScore(score);
 
-        // Check for existing active session.
-        // A session is only valid if the AI model (WS) is also running.
-        // If the model is down, the session is stale (app crashed / server died) — close it.
-        try {
-            const active = await getActiveSession(user.id);
-            if (active) {
-                const modelUp = await probeWs();
-                wsAvailable = modelUp;
-                if (modelUp) {
-                    activeSessionId = active.id;
-                    sessionStore.set(active.id);
-                    // session_start stored as localtime (datetime('now','localtime')).
-                    // Replace space with 'T' for unambiguous ISO parsing across engines.
-                    const elapsed = Math.floor(
-                        (Date.now() - new Date(active.session_start.replace(" ", "T")).getTime()) / 1000,
-                    );
-                    startTimer(elapsed);
+            // Trigger initial tip selection
+            const initialTipState: TipState = {
+                postureScore: score,
+                metrics: [],
+                fatigueScore: null,
+                irritationLevel: null,
+                blinks: null,
+                sessionMinutes: 0
+            };
+            currentTipId = selectTip(initialTipState);
+
+            // Check for existing active session.
+            // A session is only valid if the AI model (WS) is also running.
+            // If the model is down, the session is stale (app crashed / server died) — close it.
+            try {
+                const active = await getActiveSession(user.id);
+                if (active) {
+                    const modelUp = await probeWs();
+                    wsAvailable = modelUp;
+                    if (modelUp) {
+                        activeSessionId = active.id;
+                        sessionStore.set(active.id);
+                        // session_start stored as localtime (datetime('now','localtime')).
+                        // Replace space with 'T' for unambiguous ISO parsing across engines.
+                        const elapsed = Math.floor(
+                            (Date.now() - new Date(active.session_start.replace(" ", "T")).getTime()) / 1000,
+                        );
+                        startTimer(elapsed);
+                    } else {
+                        // Close stale session silently
+                        await endSession(active.id, {
+                            posture_score: score,
+                            fatigue_score: 0,
+                            eye_distance: 0,
+                            blink_rate: 0,
+                        }).catch(() => {});
+                    }
                 } else {
-                    // Close stale session silently
-                    await endSession(active.id, {
-                        posture_score: score,
-                        fatigue_score: 0,
-                        eye_distance: 0,
-                        blink_rate: 0,
-                    }).catch(() => {});
+                    probeWs().then((ok) => (wsAvailable = ok));
                 }
-            } else {
+            } catch {
                 probeWs().then((ok) => (wsAvailable = ok));
             }
-        } catch {
-            probeWs().then((ok) => (wsAvailable = ok));
-        }
+        })();
 
         return () => stopTimer();
     });
 
     // ─── ⌘↩ Start / Stop session shortcut ───────────────────────────────────
+    // ⌘↩ Start / Stop session shortcut ───────────────────────────────────
+    $effect(() => {
+        // Update tip every 30 seconds
+        const interval = setInterval(() => {
+            const state: TipState = {
+                postureScore: $livePostureScore ?? score,
+                metrics: [],
+                fatigueScore: null,
+                irritationLevel: null,
+                blinks: null,
+                sessionMinutes: Math.floor(seconds / 60)
+            };
+            currentTipId = selectTip(state);
+        }, 30000);
+        return () => clearInterval(interval);
+    });
+
     $effect(() => {
         function onkey(e: KeyboardEvent) {
             if (!(e.key === "Enter" && (e.ctrlKey || e.metaKey))) return;
@@ -689,8 +726,7 @@
                 </p>
             </div>
             <p class="text-sm text-slate-600 dark:text-slate-300 flex-1">
-                "Roll your shoulders back and down every 20 minutes to relieve
-                tension in your upper trapezius muscles."
+                {tipText}
             </p>
         </div>
     </div>
