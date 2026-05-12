@@ -4,6 +4,7 @@
     import { _, locale } from "svelte-i18n";
     import { theme, type ThemeMode } from "$lib/stores/theme";
     import { settingsStore } from "$lib/stores/settings";
+    import { aiStore, type AiProvider, DEFAULT_MODELS } from '$lib/stores/ai';
     import { updateUser } from "$lib/db";
     import { getCurrentUser } from "$lib/auth";
     import { userStore } from "$lib/stores/user";
@@ -41,6 +42,7 @@
     let saved = $state(false);
     let restored = $state(false);
     let checking = $state(false);
+    let aiSettings = $state({ ...$aiStore });
 
     // ─── Language ────────────────────────────────────────────────────────────
     const languages = [
@@ -216,6 +218,8 @@
     const lastBackup = "2 minutes ago";
 
     // ─── Lifecycle ───────────────────────────────────────────────────────────
+    $effect(() => { aiStore.save(aiSettings); });
+
     onMount(async () => {
         const current = await getCurrentUser();
         if (!current) {
@@ -640,6 +644,124 @@
                     >
                         {$_("settings.launch_setup")}
                     </button>
+                </div>
+
+                <!-- AI Features -->
+                <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5 mb-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 class="text-sm font-bold text-slate-800 dark:text-white">AI Features</h2>
+                            <p class="text-xs text-slate-400 mt-0.5">Connect an AI provider to enhance posture analysis, tips, and exercises</p>
+                        </div>
+                        <button
+                            onclick={() => { aiSettings = { ...aiSettings, enabled: !aiSettings.enabled }; }}
+                            class="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0
+                                {aiSettings.enabled ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
+                        >
+                            <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200
+                                {aiSettings.enabled ? 'translate-x-5' : 'translate-x-0'}"></span>
+                        </button>
+                    </div>
+
+                    {#if aiSettings.enabled}
+                        <div class="space-y-4">
+                            <!-- Provider -->
+                            <div>
+                                <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Provider</label>
+                                <div class="grid grid-cols-4 gap-2">
+                                    {#each (['openai', 'anthropic', 'gemini', 'ollama'] as AiProvider[]) as p}
+                                        <button
+                                            onclick={() => { aiSettings = { ...aiSettings, provider: p, model: DEFAULT_MODELS[p] }; }}
+                                            class="py-2 rounded-xl text-xs font-semibold border transition-all
+                                                {aiSettings.provider === p
+                                                    ? 'bg-sky-400/10 border-sky-400 text-sky-400'
+                                                    : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-sky-400/50'}"
+                                        >
+                                            {p === 'openai' ? 'OpenAI' : p === 'anthropic' ? 'Anthropic' : p === 'gemini' ? 'Gemini' : 'Ollama'}
+                                        </button>
+                                    {/each}
+                                </div>
+                            </div>
+
+                            <!-- API Key (hidden for ollama) -->
+                            {#if aiSettings.provider !== 'ollama'}
+                                <div>
+                                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">API Key</label>
+                                    <input
+                                        type="password"
+                                        bind:value={aiSettings.apiKey}
+                                        placeholder="sk-... / key-... / AIza..."
+                                        class="w-full px-3 py-2.5 rounded-xl text-sm
+                                            bg-slate-50 dark:bg-slate-800
+                                            border border-slate-200 dark:border-slate-700
+                                            text-slate-800 dark:text-white placeholder:text-slate-400
+                                            focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                                    />
+                                </div>
+                            {:else}
+                                <div>
+                                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Ollama Host</label>
+                                    <input
+                                        type="text"
+                                        bind:value={aiSettings.baseUrl}
+                                        placeholder="http://localhost:11434"
+                                        class="w-full px-3 py-2.5 rounded-xl text-sm
+                                            bg-slate-50 dark:bg-slate-800
+                                            border border-slate-200 dark:border-slate-700
+                                            text-slate-800 dark:text-white placeholder:text-slate-400
+                                            focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                                    />
+                                </div>
+                            {/if}
+
+                            <!-- Model -->
+                            <div>
+                                <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Model</label>
+                                <input
+                                    type="text"
+                                    bind:value={aiSettings.model}
+                                    class="w-full px-3 py-2.5 rounded-xl text-sm
+                                        bg-slate-50 dark:bg-slate-800
+                                        border border-slate-200 dark:border-slate-700
+                                        text-slate-800 dark:text-white
+                                        focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400 transition-all"
+                                />
+                            </div>
+
+                            <!-- Feature toggles -->
+                            <div>
+                                <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">Features</label>
+                                <div class="space-y-2">
+                                    {#each [
+                                        { key: 'smartTips', label: 'Smart Tips', sub: 'Context-aware tips generated by AI' },
+                                        { key: 'postureAnalysis', label: 'Posture Analysis', sub: 'Detailed AI narrative of your posture' },
+                                        { key: 'exerciseRecommendations', label: 'Exercise Recommendations', sub: 'Personalized exercise plan based on your history' },
+                                    ] as f}
+                                        <div class="flex items-center justify-between px-3 py-2.5 rounded-xl
+                                            bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                                            <div>
+                                                <p class="text-sm font-medium text-slate-700 dark:text-slate-200">{f.label}</p>
+                                                <p class="text-xs text-slate-400">{f.sub}</p>
+                                            </div>
+                                            <button
+                                                onclick={() => {
+                                                    aiSettings = {
+                                                        ...aiSettings,
+                                                        features: { ...aiSettings.features, [f.key]: !aiSettings.features[f.key as keyof typeof aiSettings.features] }
+                                                    };
+                                                }}
+                                                class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0
+                                                    {aiSettings.features[f.key as keyof typeof aiSettings.features] ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
+                                            >
+                                                <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
+                                                    {aiSettings.features[f.key as keyof typeof aiSettings.features] ? 'translate-x-5' : 'translate-x-0'}"></span>
+                                            </button>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </div>
+                        </div>
+                    {/if}
                 </div>
             </div>
 
