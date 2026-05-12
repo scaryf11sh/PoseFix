@@ -164,6 +164,19 @@ class CameraWorker(threading.Thread):
                 if xyn is None:
                     continue
 
+                # Require at least 2 of the 4 core keypoints (shoulders + hips)
+                # to be above confidence threshold before emitting.
+                # Prevents ghost detections when nobody is in frame.
+                KEY_KPTS = [5, 6, 11, 12]  # left_shoulder, right_shoulder, left_hip, right_hip
+                MIN_CONF = 0.35
+                MIN_VISIBLE = 2
+                n_visible = sum(
+                    1 for i in KEY_KPTS
+                    if i < len(xyn) and (float(conf[i]) if conf is not None else 1.0) >= MIN_CONF
+                )
+                if n_visible < MIN_VISIBLE:
+                    continue
+
                 landmarks = [
                     {
                         "x":          float(xyn[i][0]),
