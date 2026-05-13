@@ -72,6 +72,7 @@
     let blinks = $state<number | null>(null);
     let fatigueScore = $state<number | null>(null);
     let irritationLevel = $state<"LOW" | "MEDIUM" | "HIGH" | null>(null);
+    let eyeDistanceCm = $state<number | null>(null);
     let activeSessionId = $state<number | null>(null);
     let hasLiveData = $state(false);
     let wsStatus = $state<"connecting" | "connected" | "disconnected">("connecting");
@@ -420,10 +421,29 @@
                         updated.set(payload.camera_index, "started");
                         cameraLoadingStates = updated;
                     }
-                    if (payload.landmarks?.length > 0) {
-                        latestLandmarksByCamera.set(payload.camera_index, payload.landmarks);
-
-                        // ── Fuse all cameras and send to Rust ──────────────
+                     if (payload.landmarks?.length > 0) {
+                         latestLandmarksByCamera.set(payload.camera_index, payload.landmarks);
+ 
+                         // Eye distance estimation
+                         const lms = payload.landmarks;
+                         const el1 = lms[1], el2 = lms[2];
+                         if (el1 && el2 && (el1.visibility ?? 1) > 0.4 && (el2.visibility ?? 1) > 0.4) {
+                             const cam = realCameras[payload.camera_index];
+                             const vidEl = cam ? videoElements.get(cam.deviceId) : null;
+                             if (vidEl && vidEl.videoWidth > 0) {
+                                 // Assume ~70° horizontal FOV
+                                 const focal = vidEl.videoWidth / (2 * Math.tan(35 * Math.PI / 180));
+                                 const pixX1 = el1.x * vidEl.videoWidth, pixY1 = el1.y * vidEl.videoHeight;
+                                 const pixX2 = el2.x * vidEl.videoWidth, pixY2 = el2.y * vidEl.videoHeight;
+                                 const pixIPD = Math.hypot(pixX1 - pixX2, pixY1 - pixY2);
+                                 if (pixIPD >= 5) {
+                                     // Average human IPD = 6.3cm
+                                     eyeDistanceCm = Math.min(150, Math.max(30, Math.round(6.3 * focal / pixIPD)));
+                                 }
+                             }
+                         }
+ 
+                         // ── Fuse all cameras and send to Rust ──────────────
                         if (!analysisPending) {
                             analysisPending = true;
                             const cameras = Array.from(latestLandmarksByCamera.entries()).map(
@@ -506,7 +526,7 @@
     const { landmarks } = payload;
     const CW = canvas.width;
     const CH = canvas.height;
-    const VIS = 0.1;
+    const VIS = 0.4;
 
     // YOLO landmarks are normalized to the full video frame, but drawImage uses
     // object-cover crop (center-crop to fill canvas). Project landmarks through
@@ -1159,39 +1179,51 @@
                         <p class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
                             {$_("monitor.eyeHealth")}
                         </p>
-                        {#if blinks == null && irritationLevel == null}
-                            <p class="text-xs text-slate-400 italic text-center py-3">
-                                {$_("monitor.noData")}
-                            </p>
-                        {:else}
-                            <div class="space-y-3">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-xs text-slate-500 dark:text-slate-400">
-                                        {$_("monitor.irritation")}
-                                    </span>
-                                    {#if irritationLevel != null}
-                                        <span class="text-xs font-bold {irritationStyle(irritationLevel)}">
-                                            {irritationLevel}
-                                        </span>
-                                    {:else}
-                                        <span class="text-xs text-slate-400">—</span>
-                                    {/if}
-                                </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-xs text-slate-500 dark:text-slate-400">
-                                        {$_("monitor.blinks")}
-                                    </span>
-                                    {#if blinks != null}
-                                        <span class="text-xs font-bold text-slate-700 dark:text-white tabular-nums">
-                                            {blinks}
-                                            <span class="text-slate-400 font-normal">BPM</span>
-                                        </span>
-                                    {:else}
-                                        <span class="text-xs text-slate-400">—</span>
-                                    {/if}
-                                </div>
-                            </div>
-                        {/if}
+                         {#if blinks == null && irritationLevel == null && eyeDistanceCm == null}
+                             <p class="text-xs text-slate-400 italic text-center py-3">
+                                 {$_("monitor.noData")}
+                             </p>
+                         {:else}
+                             <div class="space-y-3">
+                                 <div class="flex justify-between items-center">
+                                     <span class="text-xs text-slate-500 dark:text-slate-400">
+                                         {$_("monitor.irritation")}
+                                     </span>
+                                     {#if irritationLevel != null}
+                                         <span class="text-xs font-bold {irritationStyle(irritationLevel)}">
+                                             {irritationLevel}
+                                         </span>
+                                     {:else}
+                                         <span class="text-xs text-slate-400">—</span>
+                                     {/if}
+                                 </div>
+                                 <div class="flex justify-between items-center">
+                                     <span class="text-xs text-slate-500 dark:text-slate-400">
+                                         {$_("monitor.blinks")}
+                                     </span>
+                                     {#if blinks != null}
+                                         <span class="text-xs font-bold text-slate-700 dark:text-white tabular-nums">
+                                             {blinks}
+                                             <span class="text-slate-400 font-normal">BPM</span>
+                                         </span>
+                                     {:else}
+                                         <span class="text-xs text-slate-400">—</span>
+                                     {/if}
+                                 </div>
+                                 <div class="flex justify-between items-center">
+                                     <span class="text-xs text-slate-500 dark:text-slate-400">
+                                         {$_("monitor.eyeDistance")}
+                                     </span>
+                                     {#if eyeDistanceCm != null}
+                                         <span class="text-xs font-bold {eyeDistanceCm < 50 || eyeDistanceCm > 70 ? 'text-amber-500' : 'text-green-500'} tabular-nums">
+                                             {eyeDistanceCm} <span class="text-slate-400 font-normal">cm</span>
+                                         </span>
+                                     {:else}
+                                         <span class="text-xs text-slate-400">—</span>
+                                     {/if}
+                                 </div>
+                             </div>
+                         {/if}
                     </div>
 
                     <!-- Fatigue Score + Sparkline -->
