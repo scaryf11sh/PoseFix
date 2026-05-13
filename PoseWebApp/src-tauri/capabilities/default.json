@@ -13,6 +13,7 @@
         "sql:allow-close",
         "dialog:allow-open",
         "dialog:allow-save",
+        "notification:default",
         "fs:allow-read-file",
         "fs:allow-write-file",
         "fs:allow-app-write",

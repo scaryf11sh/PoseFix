@@ -170,6 +170,20 @@
         { id: "drift", key: "drift" as keyof typeof notifState },
     ];
 
+    // ─── Health & Breaks ─────────────────────────────────────────────────────
+    let healthState = $state({ ...$settingsStore.health });
+
+    async function updateRustHealth() {
+        try {
+            await invoke("update_health_settings", {
+                interval: BigInt(healthState.breakInterval),
+                duration: BigInt(healthState.breakDuration),
+            });
+        } catch (e) {
+            console.error("Failed to update Rust health settings:", e);
+        }
+    }
+
     // ─── Preferences ─────────────────────────────────────────────────────────
     let units = $state($settingsStore.units);
     let postureGoal = $state(80);
@@ -189,9 +203,11 @@
             await updateUser(user.id, { posture_goal: postureGoal });
             settingsStore.save({
                 notifications: { ...notifState },
+                health: { ...healthState },
                 units,
                 language: $locale ?? "en",
             });
+            await updateRustHealth();
             saved = true;
             setTimeout(() => (saved = false), 2500);
         } finally {
@@ -202,9 +218,11 @@
     function restoreDefaults() {
         settingsStore.restore();
         notifState = { posture: true, weekly: true, stretch: true, drift: false };
+        healthState = { breakInterval: 60, breakDuration: 5 };
         units = "metric";
         postureGoal = 80;
         precision = "High";
+        updateRustHealth();
         restored = true;
         setTimeout(() => (restored = false), 2500);
     }
@@ -583,6 +601,62 @@
                                 </button>
                             </div>
                         {/each}
+                    </div>
+                </div>
+
+                <!-- Health & Breaks -->
+                <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <div class="w-7 h-7 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center text-green-500">
+                                <Activity class="w-4 h-4" />
+                            </div>
+                            <h2 class="font-semibold text-slate-800 dark:text-white">
+                                Salud y Descansos
+                            </h2>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <!-- Break Interval -->
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-xs font-medium text-slate-700 dark:text-slate-200" for="break-interval">
+                                    Frecuencia de descanso
+                                </label>
+                                <span class="text-xs font-bold text-sky-400">{healthState.breakInterval} min</span>
+                            </div>
+                            <input
+                                id="break-interval"
+                                type="range"
+                                min="15"
+                                max="120"
+                                step="5"
+                                bind:value={healthState.breakInterval}
+                                class="w-full accent-sky-400 cursor-pointer"
+                            />
+                            <p class="text-[10px] text-slate-400 mt-1">Cada cuánto tiempo recibirás un recordatorio para descansar.</p>
+                        </div>
+
+                        <!-- Break Duration -->
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-xs font-medium text-slate-700 dark:text-slate-200" for="break-duration">
+                                    Duración del descanso
+                                </label>
+                                <span class="text-xs font-bold text-sky-400">{healthState.breakDuration} min</span>
+                            </div>
+                            <input
+                                id="break-duration"
+                                type="range"
+                                min="1"
+                                max="30"
+                                step="1"
+                                bind:value={healthState.breakDuration}
+                                class="w-full accent-sky-400 cursor-pointer"
+                            />
+                            <p class="text-[10px] text-slate-400 mt-1">Tiempo sugerido para realizar ejercicios o estiramientos.</p>
+                        </div>
                     </div>
                 </div>
 

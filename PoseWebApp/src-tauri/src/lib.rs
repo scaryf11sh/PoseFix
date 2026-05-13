@@ -423,6 +423,10 @@ const POSEFIX_RX_UUID: &str      = "2b3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f";
 const CMD_START: u8 = 0x01;
 const CMD_STOP:  u8 = 0x02;
 
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::menu::{Menu, MenuItem};
+use tauri_plugin_notification::NotificationExt;
+
 // ─── BLE managed state ───────────────────────────────────────────────────────
 
 struct BleState {
@@ -439,6 +443,28 @@ impl BleState {
             adapter:     Mutex::new(None),
             peripheral:  Mutex::new(None),
             task_handle: Mutex::new(None),
+        }
+    }
+}
+
+// ─── Health & Breaks state ───────────────────────────────────────────────────
+
+struct AppHealthState {
+    session_start:  Mutex<std::time::Instant>,
+    is_analyzing:   Mutex<bool>,
+    break_interval: Mutex<u64>, // minutes
+    break_duration: Mutex<u64>, // minutes
+    last_break:     Mutex<std::time::Instant>,
+}
+
+impl AppHealthState {
+    fn new() -> Self {
+        AppHealthState {
+            session_start:  Mutex::new(std::time::Instant::now()),
+            is_analyzing:   Mutex::new(false),
+            break_interval: Mutex::new(60),
+            break_duration: Mutex::new(5),
+            last_break:     Mutex::new(std::time::Instant::now()),
         }
     }
 }
@@ -687,6 +713,25 @@ async fn ble_disconnect(
     if let Some(p) = prev { let _ = p.disconnect().await; }
 
     app.emit("ble://status", serde_json::json!({ "connected": false, "address": "" })).ok();
+    Ok(())
+}
+
+#[tauri::command]
+fn update_health_settings(
+    interval: u64,
+    duration: u64,
+    state: tauri::State<'_, AppHealthState>,
+) -> Result<(), String> {
+    if let Ok(mut i) = state.break_interval.lock() {
+        *i = interval;
+    }
+    if let Ok(mut d) = state.break_duration.lock() {
+        *d = duration;
+    }
+    // Reset last break when settings change to avoid immediate trigger if interval was shortened
+    if let Ok(mut lb) = state.last_break.lock() {
+        *lb = std::time::Instant::now();
+    }
     Ok(())
 }
 
@@ -1050,7 +1095,9 @@ pub fn run() {
         .manage(PoseServerState { process: server_process })
         .manage(BleState::new())
         .manage(PostureState::new())
+        .manage(AppHealthState::new())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -1069,6 +1116,7 @@ pub fn run() {
             ble_start,
             ble_stop,
             ble_disconnect,
+            update_health_settings,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -1078,7 +1126,95 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // ─── Tray Icon Setup ─────────────────────────────────────────────
+            let tray_menu = Menu::with_items(
+                app,
+                &[
+                    &MenuItem::with_id(app, "show", "Show PoseFix", true, None::<&str>)?,
+                    &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
+                ],
+            )?;
+
+            let _tray = TrayIconBuilder::with_id("main")
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { .. } = event {
+                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // ─── Background Health Task ──────────────────────────────────────
+            let app_handle = app.handle().clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    let state = app_handle.state::<AppHealthState>();
+                    
+                    let elapsed = {
+                        let start = state.session_start.lock().unwrap();
+                        start.elapsed()
+                    };
+                    let hours = elapsed.as_secs() / 3600;
+                    let minutes = (elapsed.as_secs() % 3600) / 60;
+                    
+                    let interval = *state.break_interval.lock().unwrap();
+                    let time_since_break = {
+                        let last = state.last_break.lock().unwrap();
+                        last.elapsed().as_secs() / 60
+                    };
+                    
+                    let tray_title = format!("PF: {:02}:{:02} | Break: {}m", hours, minutes, interval.saturating_sub(time_since_break));
+                    
+                    if let Some(tray) = app_handle.tray_by_id("main") {
+                         let _ = tray.set_title(Some(tray_title));
+                    }
+
+                    // Check for break trigger
+                    if time_since_break >= interval {
+                        let duration = *state.break_duration.lock().unwrap();
+                        let _ = app_handle.notification()
+                            .builder()
+                            .title("¡Hora de un descanso!")
+                            .body(format!("Has estado trabajando por {} minutos. Tómate {} minutos de descanso para mantener tu salud.", interval, duration))
+                            .show();
+                        
+                        if let Ok(mut lb) = state.last_break.lock() {
+                            *lb = std::time::Instant::now();
+                        }
+                    }
+                }
+            });
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+                let _ = window.app_handle().notification()
+                    .builder()
+                    .title("PoseFix sigue activo")
+                    .body("La aplicación se ha minimizado a la bandeja del sistema.")
+                    .show();
+            }
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

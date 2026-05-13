@@ -8,8 +8,14 @@ type NotificationSettings = {
     drift:   boolean;
 };
 
+type HealthSettings = {
+    breakInterval: number;
+    breakDuration: number;
+};
+
 type SettingsStore = {
     notifications: NotificationSettings;
+    health:        HealthSettings;
     units:         "metric" | "imperial";
     language:      string;
 };
@@ -20,6 +26,10 @@ const DEFAULTS: SettingsStore = {
         weekly:  true,
         stretch: true,
         drift:   false,
+    },
+    health: {
+        breakInterval: 60,
+        breakDuration: 5,
     },
     units:    "metric",
     language: "en",
