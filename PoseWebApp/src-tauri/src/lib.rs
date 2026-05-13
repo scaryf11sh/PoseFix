@@ -1137,9 +1137,12 @@ pub fn run() {
             let _tray = TrayIconBuilder::with_id("main")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
+                .icon(app.default_window_icon().unwrap().clone())
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
+                            #[cfg(target_os = "macos")]
+                            { let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular); }
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
@@ -1152,6 +1155,8 @@ pub fn run() {
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { .. } = event {
                         if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            #[cfg(target_os = "macos")]
+                            { let _ = tray.app_handle().set_activation_policy(tauri::ActivationPolicy::Regular); }
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
@@ -1207,6 +1212,8 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                #[cfg(target_os = "macos")]
+                { let _ = window.app_handle().set_activation_policy(tauri::ActivationPolicy::Accessory); }
                 let _ = window.app_handle().notification()
                     .builder()
                     .title("PoseFix sigue activo")
@@ -1216,8 +1223,19 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(move |_app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
+         .run(move |_app_handle, event| {
+             match event {
+                 tauri::RunEvent::Reopen { has_visible_windows, .. } => {
+                     if !has_visible_windows {
+                         if let Some(window) = _app_handle.get_webview_window("main") {
+                             #[cfg(target_os = "macos")]
+                             { let _ = _app_handle.set_activation_policy(tauri::ActivationPolicy::Regular); }
+                             let _ = window.show();
+                             let _ = window.set_focus();
+                         }
+                     }
+                 }
+                 tauri::RunEvent::Exit => {
                 if let Ok(mut guard) = server_process_exit.lock() {
                     if let Some(ref mut child) = *guard {
                         let _ = child.kill();
@@ -1226,5 +1244,7 @@ pub fn run() {
                     *guard = None;
                 }
             }
-        });
+            _ => {}
+        }
+    });
 }
