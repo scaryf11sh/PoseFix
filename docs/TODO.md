@@ -10,6 +10,8 @@
 - [ ] Validar la integración del `Pose Server` (Python) con el frontend de SvelteKit.
 - [ ] Mejorar la visualización de datos en tiempo real de los sensores duales.
 - [ ] Implementar un sistema de logs persistentes en la aplicación Tauri para facilitar el debugging de BLE.
+- [ ] Resolver conflicto de ruta de ejecución (Exit status 126) en el script de build de `swift-rs` causado por el shim.
+- [ ] Ajustar la resolución de rutas relativas en el entorno de `cargo test` para soportar la estructura del bundle generado por el linker wrapper.
 
 ## Bloqueos / Dudas
 - [TBD] Confirmar si el servidor de pose requiere GPU o si puede ejecutarse localmente en CPU con YOLOv8.

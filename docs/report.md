@@ -1,7 +1,7 @@
 # Reporte Técnico: Proyecto PoseFix
 **Sistema Híbrido de Monitoreo Postural y Salud Ocupacional**
 
-## 1. Resumen Ejecutivo
+## 1. Resumen
 PoseFix es una solución integral de salud ocupacional diseñada para entornos de escritorio (macOS). El sistema aborda el sedentarismo y los problemas ergonómicos mediante un enfoque de monitoreo dual: sensores inerciales (*wearables*) y visión computacional (IA). 
 
 A diferencia de otras soluciones, PoseFix opera bajo un paradigma de **Privacidad por Diseño**, ejecutando el procesamiento de IA y el almacenamiento de datos de forma 100% local (offline), eliminando riesgos de seguridad asociados a la nube. El objetivo principal es proporcionar feedback en tiempo real sobre la postura cervical/torácica y la fatiga visual, integrando ejercicios correctivos y estadísticas de progreso.
@@ -81,22 +81,44 @@ El diseño de la base de datos prioriza la integridad relacional y el rendimient
 -   **Fase 2 (Abril 5-6):** Visualización. Integración de LayerChart y rediseño de UI con Tailwind 4.
 -   **Fase 3 (Abril 5-15):** Inteligencia. Integración de YOLOv8-pose y reglas de goniometría (Norkin & White).
 -   **Fase 4 (Abril 15-27):** Conectividad. Reescritura del sensor ESP32 para soporte BLE nativo en lugar de IP.
--   **Fase 5 (Mayo 2026):** Estabilidad. Corrección de bugs críticos de macOS y pulido de atajos de teclado (Cmd+1-5, Cmd+Enter).
+-   **Fase 5 (Mayo 2026):** Estabilidad y Background. Implementación de System Tray, modo segundo plano y sistema de descansos programables.
 
 ---
 
-## 7. Registro de Bugs y Soluciones
+## 7. Sistema de Descansos y Background Mode
+
+Para garantizar una protección continua sin interrumpir el flujo de trabajo, PoseFix implementa un motor de ejecución en segundo plano persistente.
+
+### Funcionalidades Clave:
+1.  **System Tray (Barra de Menú):**
+    -   Muestra el estado en tiempo real (PF: [Analizando]).
+    -   Contador de tiempo de sesión y cronómetro para el próximo descanso directamente en el título del tray (macOS).
+    -   Acceso rápido para restaurar la ventana o salir de la aplicación.
+2.  **Ciclo de Vida Persistente:**
+    -   La aplicación intercepta el evento de cierre (`Cmd+W` o botón cerrar).
+    -   En lugar de terminar el proceso, la ventana se oculta (`hide`), manteniendo activa la lógica de análisis y los temporizadores en Rust.
+3.  **Gestor de Salud (Health Engine):**
+    -   **Frecuencia configurable:** Ajuste de intervalos de trabajo (15-120 min).
+    -   **Duración de pausa:** Definición de tiempo de descanso sugerido.
+    -   **Notificaciones Nativas:** Envío de recordatorios mediante el sistema de notificaciones de macOS al cumplirse el intervalo.
+
+### Arquitectura de Fondo:
+La lógica de tiempo reside en un hilo dedicado de Rust (`tokio::task`), lo que asegura que los recordatorios funcionen incluso si el motor de renderizado de la interfaz está pausado por el sistema operativo para ahorrar energía.
+
+---
+
+## 8. Registro de Bugs y Soluciones
 
 | Bug | Síntoma | Causa Raíz | Solución |
 | :--- | :--- | :--- | :--- |
 | **Símbolo Duplicado** | Fallo de compilación Tauri | Doble inclusión de `embed_plist`. | Remoción de dependencia externa; Tauri ya incluye la macro. |
 | **SIGABRT BLE** | Crash al escanear Bluetooth | Denegación de permiso TCC en macOS. | Configuración de `entitlements.plist` y re-firma ad-hoc del binario. |
-| **Fallo Diálogos** | No aparecen popups de permisos | Firma de binario inconsistente con Bundle ID. | Inclusión de `CFBundleIdentifier` y automatización de firma en `tauri.conf.json`. |
-| **Lógica Timer** | Scores incorrectos en Dashboard | Desfase en timestamps de la vista `weekly_stats`. | Corrección de queries SQL para manejo de zonas horarias locales. |
+| **TCC macOS 26** | Crash instantáneo en Tahoe | TCC bloquea binarios fuera de `.app`. | Uso de `linker-wrapper.sh` y shim para ejecutar desde el bundle. |
+| **Comando ble_scan** | 'Command not found' en bundle | WebView conectada a cache viejo sin Vite. | Workflow unificado: siempre iniciar Vite antes de abrir el `.app`. |
 
 ---
 
-## 8. Features Agregados y Removidos
+## 9. Features Agregados y Removidos
 
 -   **Agregado:** Sistema de atajos de teclado globales para navegación rápida en escritorio.
 -   **Agregado:** Handshake de seguridad BLE para prevenir *sniffing* de datos biométricos.
@@ -105,7 +127,7 @@ El diseño de la base de datos prioriza la integridad relacional y el rendimient
 
 ---
 
-## 9. Estado Actual y Pendientes
+## 10. Estado Actual y Pendientes
 
 **Estado:** Prototipo funcional de alta fidelidad (v0.8).
 -   **Completado:** Core de visión, persistencia, UI reactiva y comunicación BLE.
@@ -115,7 +137,7 @@ El diseño de la base de datos prioriza la integridad relacional y el rendimient
 
 ---
 
-## 10. Notas Técnicas Importantes
+## 11. Notas Técnicas Importantes
 
 -   **Inferencia Paralela:** El `pose_server` utiliza `CameraWorker` con hilos dedicados para evitar bloqueos en el event loop de Python, permitiendo inferencia multihilo real si se conectan varias cámaras.
 -   **Goniometría Clínica:** Los umbrales de advertencia no son arbitrarios; se basan en estándares de goniometría clínica para ángulos de inclinación cervical y torácica.
@@ -123,4 +145,3 @@ El diseño de la base de datos prioriza la integridad relacional y el rendimient
 -   **Seguridad macOS:** Se implementó un script de re-firma (`resign-dev.sh`) para asegurar que las capacidades de Bluetooth y Cámara sean reconocidas correctamente por el sistema TCC (Transparency, Consent, and Control) de Apple durante el desarrollo.
 
 ---
-*Reporte generado el 11 de Mayo de 2026.*

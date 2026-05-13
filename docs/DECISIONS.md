@@ -28,3 +28,19 @@ Eliminar la dependencia de `embed_plist` y confiar exclusivamente en la integrac
 
 ### Consecuencias
 -   **Positivas**: Resolución de conflictos de símbolos duplicados en tiempo de linkeo. Código más limpio y alineado con los estándares de Tauri.
+
+---
+
+## [2026-05-06] - Bypass de TCC en macOS 26 Tahoe mediante Linker Wrapper
+
+### Contexto
+En macOS 26 Tahoe, el subsistema TCC (Transparency, Consent, and Control) cierra inmediatamente cualquier binario que intente acceder a APIs de privacidad (Bluetooth, Cámara) si no se está ejecutando desde un bundle `.app` válido. Los flujos estándar de `cargo run` o `bun tauri dev` ejecutan el binario directamente desde `target/debug/app`, lo que provoca un crash por violación de privacidad incluso si el binario está firmado.
+
+### Decisión
+Implementar un sistema de enmascaramiento de ejecución:
+1.  **Linker Wrapper**: Usar un script personalizado (`linker-wrapper.sh`) que intercepta la fase final del linkeo para crear automáticamente una estructura de bundle `PoseFix.app` en el directorio de salida.
+2.  **Shell Shim**: Reemplazar el binario esperado por las herramientas de construcción (`target/debug/app`) con un script de shell (shim) que redirige la ejecución a través de `open PoseFix.app` o ejecutando directamente el binario dentro del bundle Contents/MacOS.
+
+### Consecuencias
+-   **Positivas**: Se permite el desarrollo y debugging de APIs de privacidad en macOS 26 Tahoe sin sacrificar el flujo de trabajo de Tauri. El sistema operativo reconoce el proceso como parte de una aplicación legítima.
+-   **Negativas**: Mayor complejidad en el proceso de construcción y linkeo. Los errores de ruta en el shim pueden bloquear el compilador (como se vio en `swift-rs`).

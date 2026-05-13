@@ -48,3 +48,4 @@ La aplicación implementa un sistema robusto de atajos de teclado para mejorar l
 - **BLE Handshake**: Implementación de un protocolo de apretón de manos dinámico para el descubrimiento de múltiples sensores BNO055.
 - **Manejo de Errores BLE**: Uso de `spawn_blocking` y `catch_unwind` en Rust para evitar cierres del sistema por fallos en el driver de Bluetooth de macOS.
 - **Firma de Binarios**: Re-firma ad-hoc necesaria en macOS para habilitar permisos de Bluetooth y Cámara en modo desarrollo.
+- **Linker Wrapper y Exec Shim**: Implementación de un wrapper para el linker que genera un bundle `.app` automáticamente y un shim de ejecución para evitar crashes de TCC en macOS 26 Tahoe.
