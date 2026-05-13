@@ -82,6 +82,7 @@ El diseño de la base de datos prioriza la integridad relacional y el rendimient
 -   **Fase 3 (Abril 5-15):** Inteligencia. Integración de YOLOv8-pose y reglas de goniometría (Norkin & White).
 -   **Fase 4 (Abril 15-27):** Conectividad. Reescritura del sensor ESP32 para soporte BLE nativo en lugar de IP.
 -   **Fase 5 (Mayo 2026):** Estabilidad y Background. Implementación de System Tray, modo segundo plano y sistema de descansos programables.
+-   **Fase 6 (Mayo 13, 2026):** Salud Visual y i18n. Implementación de estimación de distancia ojo-monitor y soporte multilenguaje completo en ajustes.
 
 ---
 
@@ -103,11 +104,18 @@ Para garantizar una protección continua sin interrumpir el flujo de trabajo, Po
     -   **Notificaciones Nativas:** Envío de recordatorios mediante el sistema de notificaciones de macOS al cumplirse el intervalo.
 
 ### Arquitectura de Fondo:
-La lógica de tiempo reside en un hilo dedicado de Rust (`tokio::task`), lo que asegura que los recordatorios funcionen incluso si el motor de renderizado de la interfaz está pausado por el sistema operativo para ahorrar energía.
+La lógica de tiempo reside en un hilo dedicado de Rust (`tauri::async_runtime`), lo que asegura que los recordatorios funcionen incluso si el motor de renderizado de la interfaz está pausado por el sistema operativo para ahorrar energía.
 
 ---
 
-## 8. Registro de Bugs y Soluciones
+## 8. Salud Visual (Eye Health)
+PoseFix utiliza la cámara para estimar la distancia entre el usuario y el monitor, promoviendo hábitos que reducen la fatiga visual.
+- **Modelo Pinhole**: Estimación basada en el ancho del video y la distancia interpupilar estándar (6.3cm).
+- **Alertas Proactivas**: El sistema notifica visualmente si el usuario se mantiene fuera del rango recomendado (50-70cm).
+
+---
+
+## 9. Registro de Bugs y Soluciones
 
 | Bug | Síntoma | Causa Raíz | Solución |
 | :--- | :--- | :--- | :--- |
@@ -115,29 +123,32 @@ La lógica de tiempo reside en un hilo dedicado de Rust (`tokio::task`), lo que 
 | **SIGABRT BLE** | Crash al escanear Bluetooth | Denegación de permiso TCC en macOS. | Configuración de `entitlements.plist` y re-firma ad-hoc del binario. |
 | **TCC macOS 26** | Crash instantáneo en Tahoe | TCC bloquea binarios fuera de `.app`. | Uso de `linker-wrapper.sh` y shim para ejecutar desde el bundle. |
 | **Comando ble_scan** | 'Command not found' en bundle | WebView conectada a cache viejo sin Vite. | Workflow unificado: siempre iniciar Vite antes de abrir el `.app`. |
+| **i18n Settings** | Textos en ES/EN mezclados | Falta de claves en archivos de traducción. | Migración completa a `$t()` para secciones Health y AI. |
 
 ---
 
-## 9. Features Agregados y Removidos
+## 10. Features Agregados y Removidos
 
 -   **Agregado:** Sistema de atajos de teclado globales para navegación rápida en escritorio.
 -   **Agregado:** Handshake de seguridad BLE para prevenir *sniffing* de datos biométricos.
+-   **Agregado:** Estimación de distancia ojo-monitor mediante visión computacional.
 -   **Cambiado:** El sensor basado en IP (WiFi) fue descartado por alta latencia y consumo energético, siendo reemplazado por **BLE 5.0**.
 -   **Cambiado:** El motor de IA pasó de ser un proceso independiente a un subproceso gestionado directamente por el ciclo de vida de Tauri (Tauri Sidecar).
 
 ---
 
-## 10. Estado Actual y Pendientes
+## 11. Estado Actual y Pendientes
 
 **Estado:** Prototipo funcional de alta fidelidad (v0.8).
 -   **Completado:** Core de visión, persistencia, UI reactiva y comunicación BLE.
 -   **En Progreso:** Refactorización del store `ble.ts` para mayor robustez en reconexiones.
+-   **En Progreso:** Finalización de la política de activación del Dock para modo Accesorio.
 -   **Pendiente:** Test de estrés prolongado con hardware real para validar el consumo de batería del ESP32.
 -   **Pendiente:** Integración final del motor de consejos dinámicos (AI Store).
 
 ---
 
-## 11. Notas Técnicas Importantes
+## 12. Notas Técnicas Importantes
 
 -   **Inferencia Paralela:** El `pose_server` utiliza `CameraWorker` con hilos dedicados para evitar bloqueos en el event loop de Python, permitiendo inferencia multihilo real si se conectan varias cámaras.
 -   **Goniometría Clínica:** Los umbrales de advertencia no son arbitrarios; se basan en estándares de goniometría clínica para ángulos de inclinación cervical y torácica.

@@ -14,8 +14,10 @@ Localizado en `/PoseFixSensor/`.
 Localizado en `/PoseWebApp/`.
 - **Frontend**: SvelteKit con TypeScript y CSS vainilla.
 - **Backend de Escritorio**: Rust (Tauri).
-- **Comunicación con Hardware**: Utiliza `btleplug` en el backend de Rust para escanear y conectarse a los sensores PoseFix.
-- **Integración de Comandos**: Implementa comandos de Tauri para control de BLE (scan, connect, start/stop data).
+    - **Comunicación con Hardware**: Utiliza `btleplug` en el backend de Rust para escanear y conectarse a los sensores PoseFix.
+    - **Gestión de Salud (AppHealthState)**: Módulo en Rust que rastrea el tiempo de sesión, intervalos de descanso y notificaciones mediante `tauri::async_runtime`.
+    - **Interfaz de Bandeja (Tray Icon)**: Proporciona persistencia en segundo plano y acceso rápido a controles de sesión.
+- **Integración de Comandos**: Implementa comandos de Tauri para control de BLE (scan, connect, start/stop data) y configuración de salud.
 
 ### 3. Pose Server (Visión/IA)
 Localizado en `/PoseWebApp/pose-server/`.

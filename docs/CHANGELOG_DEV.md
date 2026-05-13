@@ -61,3 +61,32 @@ Bundle binary correcto (ble_scan registrado en invoke_handler línea 1061). Erro
 Correr siempre Vite primero: bun run dev, luego open target/debug/PoseFix.app. O usar dev-macos.sh que automatiza ambos pasos.
 
 **Estado:** ✅ Resuelto (workflow)
+
+## [2026-05-13]
+
+### feat: Sistema de descansos con tray icon
+- **AppHealthState (Rust)**: Implementación de estructura para rastrear tiempo de sesión, intervalo y duración de descansos.
+- **Comando `update_health_settings`**: Sincronización de preferencias desde el frontend.
+- **Tarea en background**: Uso de `tauri::async_runtime::spawn` para el motor de salud (corrección: `tokio::spawn` presentaba problemas de compatibilidad en el `setup()`).
+- **UI en Settings**: Adición de sliders para `break_interval` y `break_duration`.
+
+### feat: Habilitación de tray-icon en Tauri 2
+- **Configuración**: Activación de `features = ['tray-icon']` en `Cargo.toml`.
+- **Fix de Eventos**: Ajuste en `on_tray_icon_event`; ahora recibe `&TrayIcon` en lugar de `&AppHandle` (uso de `tray.app_handle()`).
+- **Nota de Build**: `cargo check` presenta fallos debido a un bug de dependencias duales en Cargo 1.95; se recomienda usar `cargo build`.
+
+### fix: Umbral de visibilidad de landmarks
+- **Ajuste**: Aumento del umbral VIS de 0.1 a 0.4 en `camera/+page.svelte`.
+- **Resultado**: Se evita el dibujado de landmarks con baja confianza cuando el usuario no está completamente en el encuadre.
+
+### feat: Distancia ojo-monitor (estimada)
+- **Cálculo**: Implementación de modelo pinhole (`focal_px = videoWidth/(2*tan(35°))`, IPD=6.3cm).
+- **Visualización**: Nuevo panel "Eye Health" en la vista de cámara.
+- **Feedback Visual**: Indicador de color (verde: 50-70cm, ámbar: fuera de rango).
+
+### fix: i18n secciones Health y AI en Settings
+- **Refactorización**: Reemplazo de strings hardcodeados por `$t()`.
+- **Nuevas claves**: `settings.health_title`, `break_interval`, `break_duration`, `ai_provider_title`, `ai_provider_subtitle`, `ai_provider_label`, `ai_api_key_label`, `ai_host_label`, `ai_model_label`.
+
+### fix(tray): Icono en menu bar, comportamiento del Dock
+- **Estado**: Pendiente de implementación final (`.icon()` en `TrayIconBuilder`, `set_activation_policy(Accessory/Regular)`, y handler para `RunEvent::Reopen`).
