@@ -1134,15 +1134,13 @@ pub fn run() {
                 ],
             )?;
 
-            let _tray = TrayIconBuilder::with_id("main")
+            let tray = TrayIconBuilder::with_id("main")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .icon(app.default_window_icon().unwrap().clone())
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
-                            #[cfg(target_os = "macos")]
-                            { let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular); }
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
@@ -1155,14 +1153,13 @@ pub fn run() {
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { .. } = event {
                         if let Some(window) = tray.app_handle().get_webview_window("main") {
-                            #[cfg(target_os = "macos")]
-                            { let _ = tray.app_handle().set_activation_policy(tauri::ActivationPolicy::Regular); }
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
                     }
                 })
                 .build(app)?;
+            app.manage(tray);
 
             // ─── Background Health Task ──────────────────────────────────────
             let app_handle = app.handle().clone();
@@ -1212,8 +1209,6 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
-                #[cfg(target_os = "macos")]
-                { let _ = window.app_handle().set_activation_policy(tauri::ActivationPolicy::Accessory); }
                 let _ = window.app_handle().notification()
                     .builder()
                     .title("PoseFix sigue activo")
@@ -1228,8 +1223,6 @@ pub fn run() {
                  tauri::RunEvent::Reopen { has_visible_windows, .. } => {
                      if !has_visible_windows {
                          if let Some(window) = _app_handle.get_webview_window("main") {
-                             #[cfg(target_os = "macos")]
-                             { let _ = _app_handle.set_activation_policy(tauri::ActivationPolicy::Regular); }
                              let _ = window.show();
                              let _ = window.set_focus();
                          }
