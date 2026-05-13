@@ -611,9 +611,9 @@
                             <div class="w-7 h-7 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center text-green-500">
                                 <Activity class="w-4 h-4" />
                             </div>
-                            <h2 class="font-semibold text-slate-800 dark:text-white">
-                                Salud y Descansos
-                            </h2>
+                                <h2 class="font-semibold text-slate-800 dark:text-white">
+                                    {$_("settings.health_title")}
+                                </h2>
                         </div>
                     </div>
                     
@@ -621,10 +621,10 @@
                         <!-- Break Interval -->
                         <div>
                             <div class="flex justify-between items-center mb-2">
-                                <label class="text-xs font-medium text-slate-700 dark:text-slate-200" for="break-interval">
-                                    Frecuencia de descanso
-                                </label>
-                                <span class="text-xs font-bold text-sky-400">{healthState.breakInterval} min</span>
+                                 <label class="text-xs font-medium text-slate-700 dark:text-slate-200" for="break-interval">
+                                     {$_("settings.break_interval")}
+                                 </label>
+                                 <span class="text-xs font-bold text-sky-400">{healthState.breakInterval} {$_("settings.break_interval_unit")}</span>
                             </div>
                             <input
                                 id="break-interval"
@@ -641,10 +641,10 @@
                         <!-- Break Duration -->
                         <div>
                             <div class="flex justify-between items-center mb-2">
-                                <label class="text-xs font-medium text-slate-700 dark:text-slate-200" for="break-duration">
-                                    Duración del descanso
-                                </label>
-                                <span class="text-xs font-bold text-sky-400">{healthState.breakDuration} min</span>
+                                 <label class="text-xs font-medium text-slate-700 dark:text-slate-200" for="break-duration">
+                                     {$_("settings.break_duration")}
+                                 </label>
+                                 <span class="text-xs font-bold text-sky-400">{healthState.breakDuration} {$_("settings.break_duration_unit")}</span>
                             </div>
                             <input
                                 id="break-duration"
@@ -724,8 +724,8 @@
                 <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5 mb-4">
                     <div class="flex items-center justify-between mb-4">
                         <div>
-                            <h2 class="text-sm font-bold text-slate-800 dark:text-white">AI Features</h2>
-                            <p class="text-xs text-slate-400 mt-0.5">Connect an AI provider to enhance posture analysis, tips, and exercises</p>
+                                <h2 class="text-sm font-bold text-slate-800 dark:text-white">{$_("settings.ai_provider_title")}</h2>
+                                <p class="text-xs text-slate-400 mt-0.5">{$_("settings.ai_provider_subtitle")}</p>
                         </div>
                         <button
                             onclick={() => { aiSettings = { ...aiSettings, enabled: !aiSettings.enabled }; }}
@@ -741,7 +741,7 @@
                         <div class="space-y-4">
                             <!-- Provider -->
                             <div>
-                                <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Provider</label>
+                                 <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_provider_label")}</label>
                                 <div class="grid grid-cols-4 gap-2">
                                     {#each (['openai', 'anthropic', 'gemini', 'ollama'] as AiProvider[]) as p}
                                         <button
@@ -760,7 +760,7 @@
                             <!-- API Key (hidden for ollama) -->
                             {#if aiSettings.provider !== 'ollama'}
                                 <div>
-                                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">API Key</label>
+                                     <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_api_key_label")}</label>
                                     <input
                                         type="password"
                                         bind:value={aiSettings.apiKey}
@@ -774,7 +774,7 @@
                                 </div>
                             {:else}
                                 <div>
-                                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Ollama Host</label>
+                                     <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_host_label")}</label>
                                     <input
                                         type="text"
                                         bind:value={aiSettings.baseUrl}
@@ -790,7 +790,7 @@
 
                             <!-- Model -->
                             <div>
-                                <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Model</label>
+                                 <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_model_label")}</label>
                                 <input
                                     type="text"
                                     bind:value={aiSettings.model}
