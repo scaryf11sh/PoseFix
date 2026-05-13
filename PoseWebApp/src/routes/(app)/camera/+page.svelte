@@ -495,16 +495,21 @@
     let rafId: number;
 
     function drawPose(canvas: HTMLCanvasElement, payload: PosePayload | undefined, videoEl?: HTMLVideoElement) {
-        // Sync canvas pixel buffer to actual CSS layout size
+        // Sync canvas pixel buffer to physical display pixels (Retina / HiDPI support)
         const rect = canvas.getBoundingClientRect();
-        const W = Math.round(rect.width);
-        const H = Math.round(rect.height);
+        const dpr = window.devicePixelRatio || 1;
+        const W = Math.round(rect.width * dpr);
+        const H = Math.round(rect.height * dpr);
         if (W > 0 && H > 0 && (canvas.width !== W || canvas.height !== H)) {
             canvas.width = W;
             canvas.height = H;
+            canvas.style.width  = `${Math.round(rect.width)}px`;
+            canvas.style.height = `${Math.round(rect.height)}px`;
         }
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // Draw video frame directly on canvas — avoids WebKit compositor z-ordering battle
