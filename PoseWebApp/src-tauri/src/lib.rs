@@ -451,7 +451,6 @@ impl BleState {
 
 struct AppHealthState {
     session_start:  Mutex<std::time::Instant>,
-    is_analyzing:   Mutex<bool>,
     break_interval: Mutex<u64>, // minutes
     break_duration: Mutex<u64>, // minutes
     last_break:     Mutex<std::time::Instant>,
@@ -461,7 +460,6 @@ impl AppHealthState {
     fn new() -> Self {
         AppHealthState {
             session_start:  Mutex::new(std::time::Instant::now()),
-            is_analyzing:   Mutex::new(false),
             break_interval: Mutex::new(60),
             break_duration: Mutex::new(5),
             last_break:     Mutex::new(std::time::Instant::now()),
@@ -1163,7 +1161,7 @@ pub fn run() {
 
             // ─── Background Health Task ──────────────────────────────────────
             let app_handle = app.handle().clone();
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                     let state = app_handle.state::<AppHealthState>();
