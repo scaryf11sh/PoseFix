@@ -44,8 +44,6 @@
         "terms_link": "Términos de Servicio",
         "terms_and": "y la",
         "privacy_link": "Política de Privacidad",
-        "or_continue_with": "o continuar con",
-        "google": "Google",
         "have_account": "¿Ya tienes una cuenta?",
         "no_account": "¿No tienes una cuenta?",
         "forgot_password": "¿Olvidaste tu contraseña?",
@@ -190,8 +188,10 @@
         "requestingAccess": "Solicitando acceso a cámara...",
         "landmarksActive": "Seguimiento de Postura Activo",
         "landmarksOffline": "Seguimiento de Postura Desconectado",
-        "refreshCameras": "Actualizar Cámaras",
-        "eyeDistance": "Distancia al monitor",
+                            "refreshCameras": "Actualizar Cámaras",
+                            "showLandmarks": "Mostrar puntos",
+                            "hideLandmarks": "Ocultar puntos",
+                            "eyeDistance": "Distancia al monitor",
         "liveData": "Datos en Vivo",
         "dbFallback": "Usando datos históricos",
         "wsConnecting": "Conectando al flujo de postura..."
@@ -403,6 +403,11 @@
         "delete_account": "Eliminar Mi Cuenta",
         "no_user": "No se encontró usuario. Completa el onboarding primero."
     },
+    "app": {
+        "quit_title": "¿Salir de PoseFix?",
+        "quit_body": "Tienes una sesión activa. Si sales ahora, perderás los datos de tu sesión actual.",
+        "quit_confirm": "Salir"
+    },
         "settings": {
             "title": "Configuración del Sistema",
             "subtitle": "Gestiona sensores de hardware y preferencias de la aplicación.",
@@ -502,11 +507,45 @@
             "ai_provider_label": "Proveedor",
             "ai_api_key_label": "Clave API",
             "ai_host_label": "Host de Ollama",
-            "ai_model_label": "Modelo"
+            "ai_model_label": "Modelo",
+            "app_behavior_title": "Comportamiento de la App",
+            "launch_at_login": "Arrancar al Iniciar",
+            "launch_at_login_sub": "Inicia PoseFix automáticamente al encender sesión",
+            "hide_dock_icon": "Ocultar Icono del Dock",
+            "hide_dock_icon_sub": "Mostrar solo en la barra de menú, no en el Dock",
+            "mute_notifications": "Silenciar Notificaciones",
+            "mute_notifications_sub": "Silencia todas las alertas y recordatorios de PoseFix",
+            "break_alert_type": "Tipo de alerta de descanso",
+            "alert_notification": "Notificación",
+            "alert_window": "Ventana emergente",
+            "alert_both": "Ambas",
+            "camera_limit_warning": "Máximo 4 cámaras permitidas"
         },
+    "menubar": {
+        "title": "PoseFix",
+        "current_session": "Sesión Actual",
+        "next_break": "Próximo Descanso",
+        "no_session": "Sin sesión activa",
+        "no_session_sub": "Se requiere cámara para iniciar",
+        "start_session": "Iniciar Sesión",
+        "starting": "Iniciando…",
+        "stop_session": "Detener Sesión",
+        "stopping": "Deteniendo…",
+        "open_app": "Abrir PoseFix",
+        "quit": "Salir de PoseFix",
+        "every": "Cada",
+        "min_break": "min de descanso",
+        "posture_score": "Puntuación de postura"
+    },
     "theme": {
         "light": "Claro",
         "dark": "Oscuro",
         "system": "Sistema"
+    },
+    "break_alert": {
+        "title": "¡Hora de un descanso!",
+        "subtitle": "Has estado trabajando duro. Descansa los ojos y estírate.",
+        "skip": "Saltar descanso",
+        "resume": "Volver al trabajo"
     }
 }

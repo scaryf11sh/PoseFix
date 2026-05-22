@@ -44,8 +44,6 @@
         "terms_link": "Terms of Service",
         "terms_and": "and",
         "privacy_link": "Privacy Policy",
-        "or_continue_with": "or continue with",
-        "google": "Google",
         "have_account": "Already have an account?",
         "no_account": "Don't have an account?",
         "forgot_password": "Forgot password?",
@@ -190,8 +188,10 @@
         "requestingAccess": "Requesting camera access...",
         "landmarksActive": "Pose Tracking Active",
         "landmarksOffline": "Pose Tracking Offline",
-        "refreshCameras": "Refresh Cameras",
-        "eyeDistance": "Screen Distance",
+                            "refreshCameras": "Refresh Cameras",
+                            "showLandmarks": "Show Landmarks",
+                            "hideLandmarks": "Hide Landmarks",
+                            "eyeDistance": "Screen Distance",
         "liveData": "Live Data",
         "dbFallback": "Using historical data",
         "wsConnecting": "Connecting to pose stream..."
@@ -403,6 +403,11 @@
         "delete_account": "Delete My Account",
         "no_user": "No user found. Complete onboarding first."
     },
+    "app": {
+        "quit_title": "Quit PoseFix?",
+        "quit_body": "You have an active session. If you quit now, your current session data will be lost.",
+        "quit_confirm": "Quit"
+    },
         "settings": {
             "title": "System Configuration",
             "subtitle": "Manage hardware sensors and application preferences.",
@@ -502,11 +507,45 @@
             "ai_provider_label": "Provider",
             "ai_api_key_label": "API Key",
             "ai_host_label": "Ollama Host",
-            "ai_model_label": "Model"
+            "ai_model_label": "Model",
+            "app_behavior_title": "App Behavior",
+            "launch_at_login": "Launch at Login",
+            "launch_at_login_sub": "Start PoseFix automatically when you log in",
+            "hide_dock_icon": "Hide Dock Icon",
+            "hide_dock_icon_sub": "Show only in the menu bar, not in the Dock",
+            "mute_notifications": "Mute All Notifications",
+            "mute_notifications_sub": "Silence all PoseFix alerts and break reminders",
+            "break_alert_type": "Break Alert Type",
+            "alert_notification": "Notification",
+            "alert_window": "Popup Window",
+            "alert_both": "Both",
+            "camera_limit_warning": "Maximum 4 cameras allowed"
         },
+    "menubar": {
+        "title": "PoseFix",
+        "current_session": "Current Session",
+        "next_break": "Next Break In",
+        "no_session": "No active session",
+        "no_session_sub": "Camera required to start",
+        "start_session": "Start Session",
+        "starting": "Starting…",
+        "stop_session": "Stop Session",
+        "stopping": "Stopping…",
+        "open_app": "Open PoseFix",
+        "quit": "Quit PoseFix",
+        "every": "Every",
+        "min_break": "min break",
+        "posture_score": "Posture Score"
+    },
     "theme": {
         "light": "Light",
         "dark": "Dark",
         "system": "System"
+    },
+    "break_alert": {
+        "title": "Time for a break!",
+        "subtitle": "You've been working hard. Rest your eyes and stretch.",
+        "skip": "Skip Break",
+        "resume": "Back to Work"
     }
 }
