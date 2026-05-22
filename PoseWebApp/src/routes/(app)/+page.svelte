@@ -2,7 +2,7 @@
     import { onMount } from "svelte";
     import { goto } from "$app/navigation";
     import { cubicOut } from "svelte/easing";
-    import { PieChart, LineChart, Text } from "layerchart";
+    import Chart from "chart.js/auto";
     import { _ } from "svelte-i18n";
     import {
         Eye,
@@ -16,13 +16,20 @@
         Wifi,
         WifiOff,
         BarChart2,
+        MessageSquare,
+        Send,
+        X,
+        Bot,
     } from "@lucide/svelte";
     import { invoke } from "@tauri-apps/api/core";
+    import { listen } from "@tauri-apps/api/event";
     import { PUBLIC_POSE_WS_HOST, PUBLIC_POSE_WS_PORT } from "$env/static/public";
     import { getCurrentUser } from "$lib/auth";
     import { userStore } from "$lib/stores/user";
     import { sessionStore, livePostureScore } from "$lib/stores/session";
     import { selectTip, type TipState } from '$lib/tips';
+    import { settingsStore } from '$lib/stores/settings';
+    import { sendCoachMessage, getChatHistory, type ChatMessage } from "$lib/ai-chat";
     import {
         getWeeklyStats,
         getSessionStats,
@@ -35,6 +42,26 @@
     // ─── User / session ──────────────────────────────────────────────────────
     let userId = $state(0);
     let activeSessionId = $state<number | null>(null);
+
+    // ─── AI Coach Chat ───────────────────────────────────────────────────────
+    let chatOpen = $state(false);
+    let chatInput = $state("");
+    let chatMessages = $state<ChatMessage[]>(getChatHistory());
+    let chatLoading = $state(false);
+
+    async function handleSendChat() {
+        if (!chatInput.trim() || chatLoading) return;
+        const msg = chatInput;
+        chatInput = "";
+        chatLoading = true;
+        
+        // Optimistic update
+        chatMessages = [...chatMessages, { role: 'user', content: msg, timestamp: Date.now() }];
+        
+        await sendCoachMessage(msg);
+        chatMessages = getChatHistory();
+        chatLoading = false;
+    }
 
     // ─── Score gauge ─────────────────────────────────────────────────────────
     let score = $state(0);
@@ -92,12 +119,53 @@
     let tipText = $derived(
         currentTipId ? $_(`dashboard.tips.${currentTipId}`) : $_('dashboard.tips.posture_fair')
     );
-
-    // Next break: every 25 min (Pomodoro-style)
+ 
+    function doughnutAction(node: HTMLCanvasElement, score: number) {
+        const colors = (s: number) => s === 0 ? ['#e2e8f0','#e2e8f0'] : ['#38bdf8','#bfdbfe'];
+        const chart = new Chart(node, {
+            type: 'doughnut',
+            data: { datasets: [{ data: [score, 100-score], backgroundColor: colors(score) as any, borderWidth: 0, borderRadius: 4 }] },
+            options: { cutout: '78%', responsive: true, maintainAspectRatio: true, animation: { duration: 300 }, plugins: { legend: { display: false }, tooltip: { enabled: false } as any } }
+        });
+        return {
+            update(s: number) {
+                chart.data.datasets[0].data = [s, 100-s];
+                (chart.data.datasets[0] as any).backgroundColor = colors(s);
+                chart.update('none');
+            },
+            destroy() { chart.destroy(); }
+        };
+    }
+ 
+    function lineChartAction(node: HTMLCanvasElement, points: { date: Date; value: number }[]) {
+        const gc = 'rgba(148,163,184,0.1)'; const tc = '#64748b';
+        const chart = new Chart(node, {
+            type: 'line',
+            data: {
+                labels: points.map(p => p.date.toLocaleDateString('es', { weekday: 'short' })),
+                datasets: [{ data: points.map(p => p.value), borderColor: '#38bdf8', borderWidth: 2, backgroundColor: 'rgba(56,189,248,0.08)', fill: true, pointRadius: 4, pointBackgroundColor: '#38bdf8', tension: 0.3 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+                scales: { x: { grid: { color: gc }, ticks: { color: tc, font: { size: 11 } } }, y: { min: 0, max: 100, grid: { color: gc }, ticks: { color: tc, font: { size: 11 } } } },
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx: any) => ` ${ctx.parsed.y}/100` } } }
+            }
+        });
+        return {
+            update(pts: { date: Date; value: number }[]) {
+                chart.data.labels = pts.map(p => p.date.toLocaleDateString('es', { weekday: 'short' }));
+                chart.data.datasets[0].data = pts.map(p => p.value);
+                chart.update();
+            },
+            destroy() { chart.destroy(); }
+        };
+    }
+ 
+    // Next break: uses breakInterval from settings
     let nextBreakMin = $derived(() => {
         if (!activeSessionId) return null;
         const elapsed = seconds;
-        const cycle = 25 * 60;
+        const cycle = $settingsStore.health.breakInterval * 60;
         const remaining = cycle - (elapsed % cycle);
         const m = Math.floor(remaining / 60);
         const s = remaining % 60;
@@ -106,8 +174,12 @@
 
     function startTimer(fromSeconds = 0) {
         if (timerInterval) clearInterval(timerInterval);
-        seconds = fromSeconds;
-        timerInterval = setInterval(() => seconds++, 1000);
+        const stored = parseInt(localStorage.getItem('posefix_session_start_ts') ?? '0');
+        const startTs = stored > 0 ? stored : (Date.now() - fromSeconds * 1000);
+        seconds = Math.floor((Date.now() - startTs) / 1000);
+        timerInterval = setInterval(() => {
+            seconds = Math.floor((Date.now() - startTs) / 1000);
+        }, 1000);
     }
 
     function stopTimer() {
@@ -219,6 +291,21 @@
             const id = await startSession(userId);
             activeSessionId = id;
             sessionStore.set(id);
+            localStorage.setItem("posefix_active_session_id", String(id));
+            localStorage.setItem("posefix_session_start_ts", String(Date.now()));
+
+            // Sync current health settings to Rust before activating session
+            const s = $settingsStore;
+            try {
+                await invoke("update_health_settings", {
+                    interval: s.health.breakInterval,
+                    duration: s.health.breakDuration,
+                    mute: s.appBehavior?.muteNotifications ?? false,
+                    alertType: s.health.breakAlertType ?? "both",
+                });
+            } catch {}
+
+            await invoke("set_session_active", { active: true });
             startTimer(0);
             goto("/camera");
         } catch (e) {
@@ -227,6 +314,14 @@
             sessionBusy = false;
             startPhase = null;
         }
+    }
+
+    function resetSessionLocally() {
+        activeSessionId = null;
+        sessionStore.set(null);
+        livePostureScore.set(null);
+        wsAvailable = false;
+        stopTimer();
     }
 
     async function handleStopSession() {
@@ -247,6 +342,9 @@
             activeSessionId = null;
             sessionStore.set(null);
             livePostureScore.set(null);
+            localStorage.removeItem("posefix_active_session_id");
+            localStorage.removeItem("posefix_session_start_ts");
+            await invoke("set_session_active", { active: false });
             stopTimer();
 
             // Stop the Python server
@@ -317,7 +415,7 @@
     }
 
     // ─── Mount ───────────────────────────────────────────────────────────────
-    onMount(() => {
+    $effect(() => {
         (async () => {
             const user = await getCurrentUser();
             if (!user) {
@@ -376,7 +474,15 @@
             }
         })();
 
-        return () => stopTimer();
+        const unlisten = listen("posefix:session-stopped", () => {
+            resetSessionLocally();
+            loadStats();
+        });
+
+        return () => {
+            stopTimer();
+            unlisten.then((fn) => fn());
+        };
     });
 
     // ─── ⌘↩ Start / Stop session shortcut ───────────────────────────────────
@@ -494,43 +600,16 @@
                     {$_("dashboard.postureScore")}
                 </h2>
             </div>
-            <div class="w-52 h-52 my-6">
-                <PieChart
-                    data={pieData}
-                    key="key"
-                    value="value"
-                    c="color"
-                    innerRadius={-14}
-                    cornerRadius={5}
-                    padAngle={0.02}
-                >
-                    {#snippet aboveMarks()}
-                        {#if score === 0}
-                            <Text
-                                value="—"
-                                textAnchor="middle"
-                                verticalAnchor="middle"
-                                dy={-10}
-                                class="text-5xl font-bold fill-slate-300 dark:fill-slate-600"
-                            />
-                        {:else}
-                            <Text
-                                value={String(Math.round(animated))}
-                                textAnchor="middle"
-                                verticalAnchor="middle"
-                                dy={-10}
-                                class="text-5xl font-bold fill-slate-800 dark:fill-white"
-                            />
-                            <Text
-                                value="/ 100"
-                                textAnchor="middle"
-                                verticalAnchor="middle"
-                                dy={18}
-                                class="text-sm fill-slate-400"
-                            />
-                        {/if}
-                    {/snippet}
-                </PieChart>
+            <div class="relative w-52 h-52 my-6">
+                <canvas use:doughnutAction={Math.round(animated)} class="w-full h-full"></canvas>
+                <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    {#if score === 0}
+                        <span class="text-5xl font-bold text-slate-300 dark:text-slate-600">—</span>
+                    {:else}
+                        <span class="text-5xl font-bold text-slate-800 dark:text-white tabular-nums">{Math.round(animated)}</span>
+                        <span class="text-sm text-slate-400">/ 100</span>
+                    {/if}
+                </div>
             </div>
             <span
                 class="px-4 py-1 rounded-full border border-sky-300 text-sky-500 text-xs font-bold tracking-widest"
@@ -564,17 +643,8 @@
             </div>
 
             {#if hasChartData}
-                <div class="flex-1 min-h-[200px] text-sky-400">
-                    <LineChart
-                        data={chartData.filter((d) => d.value != null)}
-                        x="date"
-                        y="value"
-                        padding={{ top: 8, right: 16, bottom: 40, left: 40 }}
-                        lineProps={{ class: "stroke-sky-400 stroke-2" }}
-                        points={{ class: "fill-sky-400", r: 4 }}
-                        grid={true}
-                        axis={true}
-                    />
+                <div class="flex-1 min-h-[200px]">
+                    <canvas use:lineChartAction={chartData.filter((d) => d.value != null) as { date: Date; value: number }[]} class="w-full h-full"></canvas>
                 </div>
             {:else}
                 <div
@@ -811,5 +881,86 @@
                 </p>
             </div>
         </div>
+    </div>
+
+    <!-- AI Coach Chat Widget -->
+    <div class="fixed bottom-6 right-6 z-40 flex flex-col items-end">
+        {#if chatOpen}
+            <div 
+                class="w-80 h-[400px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 
+                rounded-2xl shadow-2xl flex flex-col overflow-hidden mb-4"
+            >
+                <div class="p-4 border-b border-slate-100 dark:border-slate-800 bg-sky-400 text-white flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <Bot class="w-5 h-5" />
+                        <span class="font-bold text-sm">Ergonomics Coach</span>
+                    </div>
+                    <button onclick={() => chatOpen = false} class="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                        <X class="w-4 h-4" />
+                    </button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                    {#if chatMessages.length === 0}
+                        <div class="text-center py-8">
+                            <Bot class="w-10 h-10 text-slate-200 dark:text-slate-700 mx-auto mb-2" />
+                            <p class="text-xs text-slate-400">Ask me anything about your workstation or posture!</p>
+                        </div>
+                    {/if}
+                    {#each chatMessages as msg}
+                        <div class="flex {msg.role === 'user' ? 'justify-end' : 'justify-start'}">
+                            <div class="max-w-[85%] px-3 py-2 rounded-2xl text-xs
+                                {msg.role === 'user' 
+                                    ? 'bg-sky-400 text-white rounded-br-none' 
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-bl-none'}">
+                                {msg.content}
+                            </div>
+                        </div>
+                    {/each}
+                    {#if chatLoading}
+                        <div class="flex justify-start">
+                            <div class="bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-2xl rounded-bl-none">
+                                <span class="flex gap-1">
+                                    <span class="w-1 h-1 bg-slate-400 rounded-full animate-bounce"></span>
+                                    <span class="w-1 h-1 bg-slate-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                                    <span class="w-1 h-1 bg-slate-400 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                                </span>
+                            </div>
+                        </div>
+                    {/if}
+                </div>
+
+                <div class="p-3 border-t border-slate-100 dark:border-slate-800 flex gap-2">
+                    <input 
+                        type="text" 
+                        bind:value={chatInput} 
+                        placeholder="Type a message..." 
+                        onkeydown={e => e.key === 'Enter' && handleSendChat()}
+                        class="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 
+                        rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-sky-400 dark:text-white"
+                    />
+                    <button 
+                        onclick={handleSendChat}
+                        disabled={chatLoading || !chatInput.trim()}
+                        class="w-8 h-8 rounded-xl bg-sky-400 text-white flex items-center justify-center 
+                        hover:bg-sky-500 disabled:opacity-50 transition-colors"
+                    >
+                        <Send class="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
+        {/if}
+
+        <button 
+            onclick={() => chatOpen = !chatOpen}
+            class="w-12 h-12 rounded-2xl bg-sky-400 text-white shadow-lg shadow-sky-400/40 
+            flex items-center justify-center hover:scale-110 transition-transform active:scale-95"
+        >
+            {#if chatOpen}
+                <X class="w-6 h-6" />
+            {:else}
+                <MessageSquare class="w-6 h-6" />
+            {/if}
+        </button>
     </div>
 </div>
