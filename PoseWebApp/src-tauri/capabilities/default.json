@@ -3,7 +3,13 @@
     "identifier": "default",
     "description": "enables the default permissions",
     "windows": [
-        "main"
+        "main",
+        "menubar",
+        "break_alert",
+        "break_overlay_0",
+        "break_overlay_1",
+        "break_overlay_2",
+        "break_overlay_3"
     ],
     "permissions": [
         "core:default",
@@ -19,6 +25,9 @@
         "fs:allow-app-write",
         "fs:allow-app-read",
         "fs:allow-appcache-write",
-        "fs:allow-appcache-read"
+        "fs:allow-appcache-read",
+        "autostart:allow-enable",
+        "autostart:allow-disable",
+        "autostart:allow-is-enabled"
     ]
 }

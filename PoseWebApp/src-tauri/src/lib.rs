@@ -164,7 +164,7 @@ struct Landmark {
     visibility: Option<f64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct MetricResult {
     id: String,
     name: String,
@@ -173,7 +173,7 @@ struct MetricResult {
     status_code: u8, // 0 | 1 | 2
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct PostureAnalysis {
     posture_score: u8,
     metrics: Vec<MetricResult>,
@@ -192,6 +192,18 @@ struct PostureState {
 impl PostureState {
     fn new() -> Self {
         PostureState { ema_scores: Mutex::new(HashMap::new()) }
+    }
+}
+
+// ─── WebSocket bridge state (background score feed for menubar) ──────────────
+
+struct WsBridgeState {
+    task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+impl WsBridgeState {
+    fn new() -> Self {
+        WsBridgeState { task: Mutex::new(None) }
     }
 }
 
@@ -407,6 +419,52 @@ fn analyze_multi_camera(
     }
 }
 
+// ─── WebSocket bridge commands ────────────────────────────────────────────────
+
+#[tauri::command]
+async fn start_ws_bridge(
+    app: tauri::AppHandle,
+    ws_bridge: tauri::State<'_, WsBridgeState>,
+) -> Result<(), String> {
+    if let Ok(mut t) = ws_bridge.task.lock() {
+        if let Some(old) = t.take() {
+            old.abort();
+        }
+    }
+
+    let app_task = app.clone();
+    let handle = tokio::spawn(async move {
+        let Ok((mut ws, _)) = tokio_tungstenite::connect_async("ws://127.0.0.1:8765").await
+        else {
+            return;
+        };
+        while let Some(Ok(msg)) = ws.next().await {
+            if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
+                if let Ok(cam) = serde_json::from_str::<CameraData>(&text) {
+                    if !cam.landmarks.is_empty() {
+                        let analysis = compute_posture(&cam.landmarks);
+                        app_task.emit("posefix:score-update", analysis).ok();
+                    }
+                }
+            }
+        }
+    });
+
+    if let Ok(mut t) = ws_bridge.task.lock() {
+        *t = Some(handle);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_ws_bridge(ws_bridge: tauri::State<'_, WsBridgeState>) {
+    if let Ok(mut t) = ws_bridge.task.lock() {
+        if let Some(handle) = t.take() {
+            handle.abort();
+        }
+    }
+}
+
 #[tauri::command]
 fn save_avatar(path: String, data: Vec<u8>) -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(&path).parent() {
@@ -423,7 +481,7 @@ const POSEFIX_RX_UUID: &str      = "2b3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f";
 const CMD_START: u8 = 0x01;
 const CMD_STOP:  u8 = 0x02;
 
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButtonState};
 use tauri::menu::{Menu, MenuItem};
 use tauri_plugin_notification::NotificationExt;
 
@@ -450,19 +508,25 @@ impl BleState {
 // ─── Health & Breaks state ───────────────────────────────────────────────────
 
 struct AppHealthState {
-    session_start:  Mutex<std::time::Instant>,
-    break_interval: Mutex<u64>, // minutes
-    break_duration: Mutex<u64>, // minutes
-    last_break:     Mutex<std::time::Instant>,
+    session_start:   Mutex<std::time::Instant>,
+    session_active:  Mutex<bool>,
+    break_interval:  Mutex<u64>, // minutes
+    break_duration:  Mutex<u64>, // minutes
+    last_break:      Mutex<std::time::Instant>,
+    mute:            Mutex<bool>,
+    alert_type:       Mutex<String>,
 }
 
 impl AppHealthState {
     fn new() -> Self {
         AppHealthState {
-            session_start:  Mutex::new(std::time::Instant::now()),
-            break_interval: Mutex::new(60),
-            break_duration: Mutex::new(5),
-            last_break:     Mutex::new(std::time::Instant::now()),
+            session_start:   Mutex::new(std::time::Instant::now()),
+            session_active:  Mutex::new(false),
+            break_interval:  Mutex::new(60),
+            break_duration:  Mutex::new(5),
+            last_break:      Mutex::new(std::time::Instant::now()),
+            mute:            Mutex::new(false),
+            alert_type:       Mutex::new("both".to_string()),
         }
     }
 }
@@ -715,9 +779,29 @@ async fn ble_disconnect(
 }
 
 #[tauri::command]
+fn set_session_active(
+    active: bool,
+    state: tauri::State<'_, AppHealthState>,
+) {
+    if let Ok(mut a) = state.session_active.lock() {
+        *a = active;
+    }
+    if active {
+        if let Ok(mut s) = state.session_start.lock() {
+            *s = std::time::Instant::now();
+        }
+        if let Ok(mut lb) = state.last_break.lock() {
+            *lb = std::time::Instant::now();
+        }
+    }
+}
+
+#[tauri::command]
 fn update_health_settings(
     interval: u64,
     duration: u64,
+    mute: bool,
+    alert_type: String,
     state: tauri::State<'_, AppHealthState>,
 ) -> Result<(), String> {
     if let Ok(mut i) = state.break_interval.lock() {
@@ -725,6 +809,12 @@ fn update_health_settings(
     }
     if let Ok(mut d) = state.break_duration.lock() {
         *d = duration;
+    }
+    if let Ok(mut m) = state.mute.lock() {
+        *m = mute;
+    }
+    if let Ok(mut at) = state.alert_type.lock() {
+        *at = alert_type;
     }
     // Reset last break when settings change to avoid immediate trigger if interval was shortened
     if let Ok(mut lb) = state.last_break.lock() {
@@ -806,6 +896,47 @@ async fn call_ai(req: AiRequest) -> Result<String, String> {
             Ok(body["response"].as_str().unwrap_or("").to_string())
         }
         other => Err(format!("Unknown provider: {other}"))
+    }
+}
+
+// ─── Simple utility commands ─────────────────────────────────────────────────
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+fn hide_break_alert(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("break_alert") {
+        let _ = win.hide();
+    }
+    for i in 0..8 {
+        if let Some(win) = app.get_webview_window(&format!("break_overlay_{}", i)) {
+            let _ = win.hide();
+        }
+    }
+    app.emit("posefix:break-overlay-hide", ()).ok();
+}
+
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+#[tauri::command]
+fn set_dock_icon_visible(visible: bool, app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if visible {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
+        let _ = app.set_activation_policy(policy);
     }
 }
 
@@ -1090,10 +1221,15 @@ pub fn run() {
     let server_process_exit = Arc::clone(&server_process);
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(PoseServerState { process: server_process })
         .manage(BleState::new())
         .manage(PostureState::new())
         .manage(AppHealthState::new())
+        .manage(WsBridgeState::new())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
@@ -1114,7 +1250,14 @@ pub fn run() {
             ble_start,
             ble_stop,
             ble_disconnect,
-            update_health_settings,
+             update_health_settings,
+             set_session_active,
+             hide_break_alert,
+             quit_app,
+             show_main_window,
+            set_dock_icon_visible,
+            start_ws_bridge,
+            stop_ws_bridge,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -1129,73 +1272,156 @@ pub fn run() {
             let tray_menu = Menu::with_items(
                 app,
                 &[
-                    &MenuItem::with_id(app, "show", "Show PoseFix", true, None::<&str>)?,
-                    &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
+                    &MenuItem::with_id(app, "quit", "Quit PoseFix", true, None::<&str>)?,
                 ],
             )?;
+
+            let tray_icon = app.default_window_icon().cloned()
+                .unwrap_or_else(|| tauri::image::Image::new_owned(
+                    vec![100u8; 32 * 32 * 4], // gray RGBA fallback
+                    32, 32,
+                ));
 
             let tray = TrayIconBuilder::with_id("main")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
-                .icon(app.default_window_icon().unwrap().clone())
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                    "quit" => {
+                .icon(tray_icon)
+                .on_menu_event(|app, event| {
+                    if event.id.as_ref() == "quit" {
                         app.exit(0);
                     }
-                    _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { .. } = event {
-                        if let Some(window) = tray.app_handle().get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                    if let TrayIconEvent::Click { rect, button_state: MouseButtonState::Up, .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(popup) = app.get_webview_window("menubar") {
+                            if popup.is_visible().unwrap_or(false) {
+                                let _ = popup.hide();
+                            } else {
+                                let scale = popup.scale_factor().unwrap_or(1.0);
+                                let popup_w_phys = 320.0 * scale;
+
+                                // rect fields are tauri::Position / tauri::Size enums
+                                let (rx, ry) = match &rect.position {
+                                    tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+                                    tauri::Position::Logical(p) => (p.x * scale, p.y * scale),
+                                };
+                                let (rw, rh) = match &rect.size {
+                                    tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
+                                    tauri::Size::Logical(s) => (s.width * scale, s.height * scale),
+                                };
+
+                                let x = ((rx + rw / 2.0 - popup_w_phys / 2.0) as i32).max(0);
+                                let y = (ry + rh) as i32;
+
+                                let _ = popup.set_position(tauri::Position::Physical(
+                                    tauri::PhysicalPosition { x, y },
+                                ));
+                                let _ = popup.show();
+                                let _ = popup.set_focus();
+                            }
                         }
                     }
                 })
                 .build(app)?;
             app.manage(tray);
 
+            // Request notification permission so break alerts work on macOS
+            {
+                let app_handle_notif = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = app_handle_notif.notification().request_permission();
+                });
+            }
+
+            // ─── Menubar popup: hide on blur ──────────────────────────────────
+            if let Some(menubar_win) = app.get_webview_window("menubar") {
+                let mb = menubar_win.clone();
+                menubar_win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Focused(false) = event {
+                        let _ = mb.hide();
+                    }
+                });
+            }
+
             // ─── Background Health Task ──────────────────────────────────────
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     let state = app_handle.state::<AppHealthState>();
-                    
-                    let elapsed = {
-                        let start = state.session_start.lock().unwrap();
-                        start.elapsed()
-                    };
-                    let hours = elapsed.as_secs() / 3600;
-                    let minutes = (elapsed.as_secs() % 3600) / 60;
-                    
+
+                    let active = *state.session_active.lock().unwrap_or_else(|p| p.into_inner());
+                    if !active {
+                        continue;
+                    }
+
                     let interval = *state.break_interval.lock().unwrap();
                     let time_since_break = {
                         let last = state.last_break.lock().unwrap();
                         last.elapsed().as_secs() / 60
                     };
-                    
-                    let tray_title = format!("PF: {:02}:{:02} | Break: {}m", hours, minutes, interval.saturating_sub(time_since_break));
-                    
-                    if let Some(tray) = app_handle.tray_by_id("main") {
-                         let _ = tray.set_title(Some(tray_title));
-                    }
 
                     // Check for break trigger
+                    let muted = *state.mute.lock().unwrap_or_else(|p| p.into_inner());
                     if time_since_break >= interval {
-                        let duration = *state.break_duration.lock().unwrap();
-                        let _ = app_handle.notification()
-                            .builder()
-                            .title("¡Hora de un descanso!")
-                            .body(format!("Has estado trabajando por {} minutos. Tómate {} minutos de descanso para mantener tu salud.", interval, duration))
-                            .show();
-                        
+                        let alert_type = state.alert_type.lock().unwrap_or_else(|p| p.into_inner()).clone();
+
+                        // Non-intrusive: system notification
+                        if (alert_type == "notification" || alert_type == "both") && !muted {
+                            let _ = app_handle.notification()
+                                .builder()
+                                .title("Time for a break!")
+                                .body(format!("You've been working for {} minutes. Take a {} minute break.", interval, *state.break_duration.lock().unwrap()))
+                                .show();
+                        }
+
+                        // Intrusive: popup window with countdown + per-monitor dark overlays
+                        if alert_type == "window" || alert_type == "both" {
+                            let duration = *state.break_duration.lock().unwrap();
+
+                            // Show break_alert FIRST so overlays don't bury it
+                            if let Some(win) = app_handle.get_webview_window("break_alert") {
+                                let _ = win.set_always_on_top(true);
+                                let _ = win.center();
+                                let _ = win.show();
+                                let _ = win.set_focus();
+
+                                // Now show fullscreen overlays on every monitor behind it
+                                if let Ok(monitors) = app_handle.available_monitors() {
+                                    for (i, monitor) in monitors.iter().enumerate() {
+                                        let pos  = monitor.position();
+                                        let size = monitor.size();
+                                        let label = format!("break_overlay_{}", i);
+                                        if let Some(existing) = app_handle.get_webview_window(&label) {
+                                            let _ = existing.set_always_on_top(true);
+                                            let _ = existing.show();
+                                        } else {
+                                            let _ = tauri::WebviewWindowBuilder::new(
+                                                &app_handle,
+                                                &label,
+                                                tauri::WebviewUrl::App("overlay".into()),
+                                            )
+                                            .position(pos.x as f64, pos.y as f64)
+                                            .inner_size(size.width as f64, size.height as f64)
+                                            .decorations(false)
+                                            .always_on_top(true)
+                                            .skip_taskbar(true)
+                                            .resizable(false)
+                                            .build();
+                                        }
+                                    }
+                                }
+
+                                // Re-focus break_alert above the overlays, then emit
+                                let _ = win.set_focus();
+                                tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+                                let _ = win.set_focus();
+                                let _ = win.emit("posefix:break-start", serde_json::json!({ "duration": duration }));
+                            }
+                        }
+
+                        // Reset timer regardless of alert type
                         if let Ok(mut lb) = state.last_break.lock() {
                             *lb = std::time::Instant::now();
                         }
@@ -1206,6 +1432,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == "menubar" { return; }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -1228,7 +1455,16 @@ pub fn run() {
                          }
                      }
                  }
-                 tauri::RunEvent::Exit => {
+                  tauri::RunEvent::ExitRequested { api, .. } => {
+                      let state = _app_handle.state::<AppHealthState>();
+                      let active = state.session_active.lock().map(|g| *g).unwrap_or(false);
+                      if active {
+                          api.prevent_exit();
+                          _app_handle.emit("posefix:quit-requested", ()).ok();
+                      }
+                  }
+                  tauri::RunEvent::Exit => {
+
                 if let Ok(mut guard) = server_process_exit.lock() {
                     if let Some(ref mut child) = *guard {
                         let _ = child.kill();

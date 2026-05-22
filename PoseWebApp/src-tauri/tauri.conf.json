@@ -19,6 +19,33 @@
                 "fullscreen": false,
                 "minHeight": 800,
                 "minWidth": 1000
+            },
+            {
+                "label": "menubar",
+                "title": "PoseFix",
+                "url": "/menubar",
+                "width": 320,
+                "height": 440,
+                "decorations": false,
+                "visible": false,
+                "alwaysOnTop": true,
+                "skipTaskbar": true,
+                "resizable": false,
+                "transparent": true,
+                "shadow": false
+            },
+            {
+                "label": "break_alert",
+                "url": "/break-alert",
+                "width": 420,
+                "height": 460,
+                "decorations": false,
+                "visible": false,
+                "alwaysOnTop": true,
+                "skipTaskbar": true,
+                "resizable": false,
+                "transparent": true,
+                "shadow": false
             }
         ],
         "security": {
