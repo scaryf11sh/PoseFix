@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { goto } from "$app/navigation";
-    import { LineChart } from "layerchart";
+    import Chart from "chart.js/auto";
     import { _ } from "svelte-i18n";
     import {
         VideoOff,
@@ -16,6 +16,7 @@
         Power,
     } from "@lucide/svelte";
     import { invoke } from "@tauri-apps/api/core";
+    import { listen } from "@tauri-apps/api/event";
     import { PUBLIC_POSE_WS_HOST, PUBLIC_POSE_WS_PORT } from "$env/static/public";
     import { getCurrentUser } from "$lib/auth";
     import { userStore } from "$lib/stores/user";
@@ -73,38 +74,42 @@
     let fatigueScore = $state<number | null>(null);
     let irritationLevel = $state<"LOW" | "MEDIUM" | "HIGH" | null>(null);
     let eyeDistanceCm = $state<number | null>(null);
+    let showLandmarks = $state(true);
     let activeSessionId = $state<number | null>(null);
     let hasLiveData = $state(false);
     let wsStatus = $state<"connecting" | "connected" | "disconnected">("connecting");
-
-    // ─── Per-camera Rust analysis results ───────────────────────────────────
-    // Map: camera_index → latest PostureAnalysis from Rust (per-camera badge in grid)
-    let cameraAnalysis = $state<Map<number, PostureAnalysis>>(new Map());
-    // Map: camera_index → loading state ("loading" | "started" | "stopped")
-    let cameraLoadingStates = $state<Map<number, string>>(new Map());
-    // Fused multi-camera result — shown in sidebar and single-view overlay
-    let fusedAnalysis = $state<PostureAnalysis | null>(null);
-    // For single-view overlay: use fused result if available, fall back to any camera result
-    let currentAnalysis = $derived(
-        fusedAnalysis ?? (cameraAnalysis.size > 0 ? cameraAnalysis.values().next().value : null)
-    );
-
-    let postureStatus = $derived(
-        postureScore == null ? null
-        : postureScore >= 80 ? "Optimal"
-        : postureScore >= 60 ? "Fair"
-        : "Poor",
-    );
+ 
+    function sparklineAction(node: HTMLCanvasElement, points: { x: number; value: number }[]) {
+        const chart = new Chart(node, {
+            type: 'line',
+            data: { labels: points.map(p => String(p.x)), datasets: [{ data: points.map(p => p.value), borderColor: '#38bdf8', borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: false }] },
+            options: { responsive: true, maintainAspectRatio: false, animation: false as any, scales: { x: { display: false }, y: { display: false, min: 0, max: 100 } }, plugins: { legend: { display: false }, tooltip: { enabled: false } as any } }
+        });
+        return {
+            update(pts: { x: number; value: number }[]) { chart.data.labels = pts.map(p => String(p.x)); chart.data.datasets[0].data = pts.map(p => p.value); chart.update('none'); },
+            destroy() { chart.destroy(); }
+        };
+    }
+ 
+    $effect(() => {
+        if (postureScore != null) {
+            localStorage.setItem("posefix_live_score", String(postureScore));
+        }
+    });
 
     type DataPoint = { x: number; value: number };
     let fatigueHistory = $state<DataPoint[]>([]);
+    let fusedAnalysis = $state<PostureAnalysis | null>(null);
+    let currentAnalysis = $derived(fusedAnalysis);
+    let cameraAnalysis = $state<Map<number, PostureAnalysis>>(new Map());
+    let cameraLoadingStates = $state<Map<number, string>>(new Map());
 
     // ─── Camera state ───────────────────────────────────────────────────────
     let realCameras = $state<MediaDeviceInfo[]>([]);
     let disabledCameraIds = $state<Set<string>>(new Set());
     let enabledCameras = $derived(realCameras.filter((c) => !disabledCameraIds.has(c.deviceId)));
     let cameraPermission = $state<"idle" | "requesting" | "granted" | "denied">("idle");
-    let viewMode = $state<"single" | "2x2" | "3x3">("single");
+    let viewMode = $state<"single" | "2x2">("single");
     let currentCamIndex = $state(0);
     let currentCam = $derived(enabledCameras[currentCamIndex] ?? null);
     let activeCams = $derived(enabledCameras.length);
@@ -126,7 +131,6 @@
     });
     $effect(() => {
         if (activeCams <= 1 && viewMode !== "single") viewMode = "single";
-        if (activeCams <= 4 && viewMode === "3x3") viewMode = "2x2";
     });
 
     function nextCam() {
@@ -394,6 +398,8 @@
                 wsSend({ cmd: "set_precision", level: precision });
                 // Iniciar cámaras habilitadas en el servidor Python
                 wsStartActiveCameras();
+                // Start Rust WS bridge so menubar score updates when window is hidden
+                invoke('start_ws_bridge').catch(() => {});
             };
             ws.onmessage = (e) => {
                 try {
@@ -404,12 +410,18 @@
                         if (msg.type === "error") {
                             console.warn("[PoseServer]", msg.message);
                         }
-                        if (msg.type === "loading" || msg.type === "status") {
-                            const idx = msg.camera_index as number;
+                        const idx = msg.camera_index as number;
+                        if (idx !== undefined) {
                             const updated = new Map(cameraLoadingStates);
                             updated.set(idx, msg.type === "loading" ? "loading" : (msg.status ?? msg.type));
                             cameraLoadingStates = updated;
                         }
+                        return;
+                    }
+
+                    if (msg.type === "eye_data") {
+                        blinks = msg.blinks;
+                        irritationLevel = msg.irritationLevel;
                         return;
                     }
 
@@ -495,7 +507,6 @@
     let rafId: number;
 
     function drawPose(canvas: HTMLCanvasElement, payload: PosePayload | undefined, videoEl?: HTMLVideoElement) {
-        // Sync canvas pixel buffer to physical display pixels (Retina / HiDPI support)
         const rect = canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
         const W = Math.round(rect.width * dpr);
@@ -512,72 +523,106 @@
         ctx.imageSmoothingQuality = "high";
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Draw video frame directly on canvas — avoids WebKit compositor z-ordering battle
-        // where hardware-accelerated <video> renders above CSS-positioned elements.
         if (videoEl && videoEl.readyState >= 2 && canvas.width > 0 && canvas.height > 0) {
             const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
             if (vw > 0 && vh > 0) {
                 const cw = canvas.width, ch = canvas.height;
-                // object-cover math: scale to fill, crop center
-                const scale = Math.max(cw / vw, ch / vh);
-                const sw = cw / scale, sh = ch / scale;
-                const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
-                ctx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, cw, ch);
+                const scale = Math.min(cw / vw, ch / vh);
+                const dw = Math.round(vw * scale);
+                const dh = Math.round(vh * scale);
+                const dx = Math.round((cw - dw) / 2);
+                const dy = Math.round((ch - dh) / 2);
+                ctx.save();
+                ctx.translate(cw, 0);
+                ctx.scale(-1, 1);
+                ctx.drawImage(videoEl, 0, 0, vw, vh, dx, dy, dw, dh);
+                ctx.restore();
             }
         }
 
-    if (!payload?.landmarks?.length || canvas.width === 0 || canvas.height === 0) return;
+        if (!showLandmarks || !payload?.landmarks?.length || canvas.width === 0 || canvas.height === 0) return;
 
-    const { landmarks } = payload;
-    const CW = canvas.width;
-    const CH = canvas.height;
-    const VIS = 0.4;
+        const { landmarks } = payload;
+        const CW = canvas.width;
+        const CH = canvas.height;
+        const VIS = 0.4;
 
-    // YOLO landmarks are normalized to the full video frame, but drawImage uses
-    // object-cover crop (center-crop to fill canvas). Project landmarks through
-    // the same crop so they land on the correct pixel.
-    let toLmX: (nx: number) => number;
-    let toLmY: (ny: number) => number;
-    if (videoEl && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
-        const vw = videoEl.videoWidth;
-        const vh = videoEl.videoHeight;
-        const scale = Math.max(CW / vw, CH / vh);
-        const sw = CW / scale;
-        const sh = CH / scale;
-        const sx = (vw - sw) / 2;
-        const sy = (vh - sh) / 2;
-        toLmX = (nx) => (nx * vw - sx) * scale;
-        toLmY = (ny) => (ny * vh - sy) * scale;
-    } else {
-        toLmX = (nx) => nx * CW;
-        toLmY = (ny) => ny * CH;
-    }
+        let toLmX: (nx: number) => number;
+        let toLmY: (ny: number) => number;
+        if (videoEl && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+            const vw = videoEl.videoWidth;
+            const vh = videoEl.videoHeight;
+            const scale = Math.min(CW / vw, CH / vh);
+            const dw = vw * scale;
+            const dh = vh * scale;
+            const dx = (CW - dw) / 2;
+            const dy = (CH - dh) / 2;
+            toLmX = (nx) => CW - (dx + nx * dw);
+            toLmY = (ny) => dy + ny * dh;
+        } else {
+            toLmX = (nx) => CW - nx * CW;
+            toLmY = (ny) => ny * CH;
+        }
 
-    // Draw skeleton connections
-    ctx.strokeStyle = "rgba(56,189,248,0.9)";
-    ctx.lineWidth = 2.5;
-    for (const [a, b] of POSE_CONNECTIONS) {
-        const la = landmarks[a];
-        const lb = landmarks[b];
-        if (!la || !lb) continue;
-        if ((la.visibility ?? 1) < VIS || (lb.visibility ?? 1) < VIS) continue;
-        ctx.beginPath();
-        ctx.moveTo(toLmX(la.x), toLmY(la.y));
-        ctx.lineTo(toLmX(lb.x), toLmY(lb.y));
-        ctx.stroke();
-    }
+        if (landmarks.length <= 17) {
+            // --- COCO Skeleton ---
+            const ZONES = {
+                face: { color: "#f472b6", links: [[0, 1], [0, 2], [1, 3], [2, 4]] },
+                torso: { color: "#38bdf8", links: [[5, 6], [5, 11], [6, 12], [11, 12]] },
+                arms: { color: "#fbbf24", links: [[5, 7], [7, 9], [6, 8], [8, 10]] },
+                legs: { color: "#4ade80", links: [[11, 13], [13, 15], [12, 14], [14, 16]] }
+            };
 
-    // Draw landmark joints
-    for (const lm of landmarks) {
-        if ((lm.visibility ?? 1) < VIS) continue;
-        ctx.beginPath();
-        ctx.arc(toLmX(lm.x), toLmY(lm.y), 5, 0, Math.PI * 2);
-        ctx.fillStyle = "#f472b6";
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.7)";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-    }
+            for (const zone of Object.values(ZONES)) {
+                ctx.strokeStyle = zone.color;
+                for (const [a, b] of zone.links) {
+                    const la = landmarks[a];
+                    const lb = landmarks[b];
+                    if (!la || !lb || (la.visibility ?? 1) < VIS || (lb.visibility ?? 1) < VIS) continue;
+                    
+                    const avgVis = ((la.visibility ?? 1) + (lb.visibility ?? 1)) / 2;
+                    ctx.lineWidth = 1.5 + avgVis * 2;
+                    ctx.shadowBlur = avgVis * 8;
+                    ctx.shadowColor = zone.color;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(toLmX(la.x), toLmY(la.y));
+                    ctx.lineTo(toLmX(lb.x), toLmY(lb.y));
+                    ctx.stroke();
+                }
+            }
+            ctx.shadowBlur = 0;
+
+            for (const lm of landmarks) {
+                if ((lm.visibility ?? 1) < VIS) continue;
+                ctx.beginPath();
+                ctx.arc(toLmX(lm.x), toLmY(lm.y), 4 + (lm.visibility ?? 1) * 2, 0, Math.PI * 2);
+                ctx.fillStyle = "#f472b6";
+                ctx.fill();
+                ctx.strokeStyle = "white";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        } else {
+            // --- Face Mesh ---
+            const GROUPS = [
+                { indices: [33,246,161,160,159,158,157,173,133,155,154,153,145,144,163,7, 362,398,384,385,386,387,388,466,263,249,390,373,374,380,381,382], color: "#38bdf8", radius: 2 },
+                { indices: [61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146], color: "#f472b6", radius: 2 },
+                { indices: [1,2,98,327,168,6], color: "#a3e635", radius: 2 },
+                { indices: [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109], color: "rgba(148,163,184,0.4)", radius: 1.5 }
+            ];
+
+            for (const group of GROUPS) {
+                ctx.fillStyle = group.color;
+                for (const idx of group.indices) {
+                    const lm = landmarks[idx];
+                    if (!lm) continue;
+                    ctx.beginPath();
+                    ctx.arc(toLmX(lm.x), toLmY(lm.y), group.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
     }
 
     function startRaf() {
@@ -719,6 +764,12 @@
         connectWs();
         startRaf();
 
+        const unlistenScore = await listen<PostureAnalysis>('posefix:score-update', ({ payload }) => {
+            postureScore = payload.posture_score;
+            livePostureScore.set(payload.posture_score);
+            fusedAnalysis = payload;
+        });
+
         const interval = setInterval(() => {
             // Latency indicator — cosmetic only
             latency = parseFloat(
@@ -746,6 +797,7 @@
         }, 1500);
 
         return () => {
+            unlistenScore();
             clearInterval(interval);
             cancelAnimationFrame(rafId);
             if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
@@ -805,11 +857,10 @@
         </div>
     </div>
 
-    <!-- Top row: Camera Monitor | Camera Signals + AI Metrics -->
-    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
-        <!-- Camera Monitor -->
+    <!-- Camera Monitor (full width) -->
+    <div class="mb-4">
         <div
-            class="lg:col-span-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5 flex flex-col"
+            class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5"
         >
             <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-2">
@@ -831,13 +882,18 @@
                             {$_("monitor.landmarksOffline")}
                         </span>
                     {/if}
+                    <button
+                        onclick={() => showLandmarks = !showLandmarks}
+                        class="ml-2 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-bold border border-slate-200 dark:border-slate-700 hover:bg-sky-400/10 hover:text-sky-400 transition-all"
+                    >
+                        {$_(showLandmarks ? "monitor.hideLandmarks" : "monitor.showLandmarks")}
+                    </button>
                 </div>
                 <!-- View mode buttons -->
                 <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
-                    {#each [["single", $_("monitor.singleView")], ["2x2", "2×2"], ["3x3", "3×3"]] as [mode, label]}
+                    {#each [["single", $_("monitor.singleView")], ["2x2", "2×2"]] as [mode, label]}
                         {@const disabled =
                             (activeCams <= 1 && mode !== "single") ||
-                            (activeCams <= 4 && mode === "3x3") ||
                             (activeCams <= 2 && mode === "2x2")}
                         <button
                             onclick={() => !disabled && (viewMode = mode as typeof viewMode)}
@@ -857,7 +913,8 @@
 
             <!-- Feed area -->
             <div
-                class="rounded-xl overflow-hidden bg-slate-900 dark:bg-slate-950 relative flex-1 min-h-[200px] transition-all duration-300"
+                class="rounded-xl overflow-hidden bg-slate-900 dark:bg-slate-950 relative w-full"
+                style="aspect-ratio: 16/9;"
             >
                 {#if cameraPermission === "denied"}
                     <div
@@ -904,7 +961,7 @@
                             {@const camIdx = realCameras.findIndex(c => c.deviceId === currentCam.deviceId)}
                             {@const camState = cameraLoadingStates.get(camIdx)}
                             <div class="relative w-full h-full">
-                                <!-- svelte-ignore a11y-media-has-caption -->
+                                <!-- svelte-ignore a11y_media_has_caption -->
                                 <!-- Video is invisible — canvas draws frames via ctx.drawImage() -->
                                 <video
                                     use:videoAction={currentCam.deviceId}
@@ -977,8 +1034,8 @@
                         </button>
                     {/if}
                 {:else}
-                    <!-- Grid view (2x2 or 3x3) -->
-                    {@const cols = viewMode === "2x2" ? 2 : 3}
+                    <!-- Grid view (2x2) -->
+                    {@const cols = 2}
                     {@const slots = cols * cols}
                     <div
                         class="grid h-full gap-0.5"
@@ -991,7 +1048,7 @@
                             <div class="relative bg-slate-800 overflow-hidden">
                                 {#if cam}
                                     <div class="relative w-full h-full">
-                                        <!-- svelte-ignore a11y-media-has-caption -->
+                                        <!-- svelte-ignore a11y_media_has_caption -->
                                         <video
                                             use:videoAction={cam.deviceId}
                                             autoplay
@@ -1032,9 +1089,11 @@
                 {/if}
             </div>
         </div>
+    </div>
 
-        <!-- Right column: Camera Signals + Real-Time AI Metrics -->
-        <div class="lg:col-span-2 flex flex-col gap-4">
+    <!-- Camera Signals + AI Metrics below camera -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        <div>
             <!-- Camera Signals -->
             <div
                 class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5"
@@ -1100,11 +1159,12 @@
                     {$_("monitor.refreshCameras")}
                 </button>
             </div>
+        </div>
 
-            <!-- Real-Time AI Metrics -->
-            <div
-                class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5 flex-1"
-            >
+        <!-- Real-Time AI Metrics -->
+        <div
+            class="lg:col-span-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5"
+        >
                 <div class="flex items-center gap-2 mb-5">
                     <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
                     <h2 class="text-xs font-bold uppercase tracking-widest text-sky-400">
@@ -1249,21 +1309,14 @@
                                 </p>
                             </div>
                             {#if fatigueHistory.length > 1}
-                                <div class="h-12 text-sky-400 mt-2">
-                                    <LineChart
-                                        data={fatigueHistory}
-                                        x="x"
-                                        y="value"
-                                        padding={{ top: 4, bottom: 4, left: 0, right: 0 }}
-                                        lineProps={{ class: "stroke-sky-400 stroke-2" }}
-                                    />
+                                <div class="h-12 mt-2">
+                                    <canvas use:sparklineAction={fatigueHistory} class="w-full h-full"></canvas>
                                 </div>
                             {/if}
                         {/if}
                     </div>
                 </div>
             </div>
-        </div>
     </div>
 
     <!-- Sensor Telemetry -->
