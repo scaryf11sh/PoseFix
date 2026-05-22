@@ -687,38 +687,6 @@
                     </div>
                 </div>
 
-
-                                <div class="flex-1 min-w-0">
-                                    <p
-                                        class="text-sm font-semibold text-slate-800 dark:text-white"
-                                    >
-                                        {s.name}
-                                    </p>
-                                    <p class="text-xs text-slate-400">
-                                        {s.sub} • {s.status}
-                                    </p>
-                                </div>
-                                <button
-                                    aria-label=""
-                                    onclick={() => (s.enabled = !s.enabled)}
-                                    class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0
-                                        {s.enabled
-                                        ? 'bg-sky-400'
-                                        : 'bg-slate-200 dark:bg-slate-600'}"
-                                >
-                                    <span
-                                        class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
-                                        {s.enabled
-                                            ? 'translate-x-5'
-                                            : 'translate-x-0'}"
-                                    >
-                                    </span>
-                                </button>
-                            </div>
-                        {/each}
-                    </div>
-                </div>
-
                 <!-- ===================== STEP 3 ===================== -->
             {:else}
                 <div class="mb-6">

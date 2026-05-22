@@ -566,10 +566,12 @@
             <div class="grid grid-cols-2 gap-3 mb-4">
                 <div>
                     <label
+                        for="start-date"
                         class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                         >{$_("export.startDate")}</label
                     >
                     <input
+                        id="start-date"
                         type="date"
                         bind:value={startDate}
                         class="w-full px-3 py-2 rounded-xl text-sm
@@ -582,10 +584,12 @@
                 </div>
                 <div>
                     <label
+                        for="end-date"
                         class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1.5"
                         >{$_("export.endDate")}</label
                     >
                     <input
+                        id="end-date"
                         type="date"
                         bind:value={endDate}
                         class="w-full px-3 py-2 rounded-xl text-sm
@@ -658,6 +662,7 @@
                         >
                         <button
                             onclick={() => (cat.enabled = !cat.enabled)}
+                            aria-label={cat.enabled ? `Disable ${cat.label()}` : `Enable ${cat.label()}`}
                             class="relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0
                                 {cat.enabled
                                 ? 'bg-sky-400'

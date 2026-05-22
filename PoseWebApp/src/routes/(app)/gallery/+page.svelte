@@ -164,7 +164,7 @@
         }
     ];
 
-    let selectedExercise: Exercise | null = null;
+    let selectedExercise = $state<Exercise | null>(null);
     let currentLang = $state<'es' | 'en'>('es');
     let isDoingExercise = $state(false);
     let exerciseProgress = $state(0);
@@ -329,6 +329,7 @@
                     </div>
                     <button
                         onclick={() => selectedExercise = null}
+                        aria-label={currentLang === 'es' ? 'Cerrar' : 'Close'}
                         class="p-2 rounded-lg hover:bg-carbon-200 dark:hover:bg-twilight-indigo-800 transition"
                     >
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -455,9 +456,9 @@
             <!-- Grid de ejercicios -->
             <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {#each exercises as exercise}
-                    <div
+                    <button
                         onclick={() => selectExercise(exercise)}
-                        class="rounded-2xl bg-twilight-indigo-50 dark:bg-rich-cerulean-900 p-6 shadow-2xl shadow-port-gore-200 dark:shadow-port-gore-400 border border-twilight-indigo-950 cursor-pointer hover:border-electric-green-400 transition"
+                        class="text-left rounded-2xl bg-twilight-indigo-50 dark:bg-rich-cerulean-900 p-6 shadow-2xl shadow-port-gore-200 dark:shadow-port-gore-400 border border-twilight-indigo-950 cursor-pointer hover:border-electric-green-400 transition w-full"
                     >
                         <div class="flex items-start justify-between mb-3">
                             <div class="flex items-center gap-3">
@@ -499,7 +500,7 @@
                                 <span>{currentLang === 'es' ? 'Ver ejercicio' : 'View exercise'}</span>
                             </div>
                         {/if}
-                    </div>
+                    </button>
                 {/each}
             </div>
         {/if}
