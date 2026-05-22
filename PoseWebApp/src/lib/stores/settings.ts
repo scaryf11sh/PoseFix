@@ -11,11 +11,19 @@ type NotificationSettings = {
 type HealthSettings = {
     breakInterval: number;
     breakDuration: number;
+    breakAlertType: "notification" | "window" | "both";
+};
+
+type AppBehaviorSettings = {
+    launchAtLogin:     boolean;
+    hideDockIcon:      boolean;
+    muteNotifications: boolean;
 };
 
 type SettingsStore = {
     notifications: NotificationSettings;
     health:        HealthSettings;
+    appBehavior:   AppBehaviorSettings;
     units:         "metric" | "imperial";
     language:      string;
 };
@@ -30,6 +38,12 @@ const DEFAULTS: SettingsStore = {
     health: {
         breakInterval: 60,
         breakDuration: 5,
+        breakAlertType: "both",
+    },
+    appBehavior: {
+        launchAtLogin:     false,
+        hideDockIcon:      false,
+        muteNotifications: false,
     },
     units:    "metric",
     language: "en",
@@ -59,6 +73,10 @@ function createSettingsStore() {
         restore() {
             if (browser) localStorage.setItem("appSettings", JSON.stringify(DEFAULTS));
             set({ ...DEFAULTS });
+        },
+
+        reload() {
+            set(loadSettings());
         },
     };
 }

@@ -35,6 +35,9 @@
         BluetoothOff,
         Radio,
         Signal,
+        Rocket,
+        BellOff,
+        MonitorOff,
     } from "@lucide/svelte";
 
     let loading = $state(true);
@@ -110,6 +113,7 @@
     let cameraPermission = $state<"idle" | "requesting" | "granted" | "denied">("idle");
     let detectedCameras = $state<MediaDeviceInfo[]>([]);
     let enabledCameraIds = $state<Set<string>>(new Set());
+    let cameraLimitWarning = $state(false);
 
     function loadCameraSettings() {
         try {
@@ -133,6 +137,11 @@
         if (next.has(deviceId)) {
             next.delete(deviceId);
         } else {
+            if (next.size >= 4) {
+                cameraLimitWarning = true;
+                setTimeout(() => (cameraLimitWarning = false), 2500);
+                return;
+            }
             next.add(deviceId);
         }
         enabledCameraIds = next;
@@ -154,11 +163,16 @@
         detectedCameras = devices.filter(
             (d) => d.kind === "videoinput" && !/desk\s*view/i.test(d.label),
         );
+
+        // Prune stale IDs: remove cameras no longer connected
+        const detectedIds = new Set(detectedCameras.map((c) => c.deviceId));
+        enabledCameraIds = new Set([...enabledCameraIds].filter((id) => detectedIds.has(id)));
+
         // If settings not yet configured, enable all detected cameras by default
         if (!localStorage.getItem("posefix_enabled_cameras") && detectedCameras.length > 0) {
-            enabledCameraIds = new Set(detectedCameras.map((c) => c.deviceId));
-            saveCameraSettings();
+            enabledCameraIds = new Set(detectedCameras.slice(0, 4).map((c) => c.deviceId));
         }
+        saveCameraSettings();
     }
 
     // ─── Notifications ───────────────────────────────────────────────────────
@@ -176,13 +190,46 @@
     async function updateRustHealth() {
         try {
             await invoke("update_health_settings", {
-                interval: BigInt(healthState.breakInterval),
-                duration: BigInt(healthState.breakDuration),
+                interval: healthState.breakInterval,
+                duration: healthState.breakDuration,
+                mute: appBehavior.muteNotifications,
+                alertType: healthState.breakAlertType ?? "both",
             });
         } catch (e) {
             console.error("Failed to update Rust health settings:", e);
         }
     }
+
+    // ─── App Behavior ────────────────────────────────────────────────────────
+    let appBehavior = $state({ ...($settingsStore.appBehavior ?? { launchAtLogin: false, hideDockIcon: false, muteNotifications: false }) });
+
+    async function applyLaunchAtLogin(enabled: boolean) {
+        try {
+            if (enabled) {
+                await invoke("plugin:autostart|enable");
+            } else {
+                await invoke("plugin:autostart|disable");
+            }
+        } catch (e) {
+            console.error("Autostart toggle failed:", e);
+        }
+    }
+
+    async function applyDockIcon(hidden: boolean) {
+        try {
+            await invoke("set_dock_icon_visible", { visible: !hidden });
+        } catch (e) {
+            console.error("Dock icon toggle failed:", e);
+        }
+    }
+
+    onMount(async () => {
+        // Sync launch-at-login state from OS
+        try {
+            const enabled = await invoke<boolean>("plugin:autostart|is_enabled");
+            appBehavior = { ...appBehavior, launchAtLogin: enabled };
+        } catch {}
+    });
 
     // ─── Preferences ─────────────────────────────────────────────────────────
     let units = $state($settingsStore.units);
@@ -204,6 +251,7 @@
             settingsStore.save({
                 notifications: { ...notifState },
                 health: { ...healthState },
+                appBehavior: { ...appBehavior },
                 units,
                 language: $locale ?? "en",
             });
@@ -218,10 +266,13 @@
     function restoreDefaults() {
         settingsStore.restore();
         notifState = { posture: true, weekly: true, stretch: true, drift: false };
-        healthState = { breakInterval: 60, breakDuration: 5 };
+        healthState = { breakInterval: 60, breakDuration: 5, breakAlertType: "both" };
+        appBehavior = { launchAtLogin: false, hideDockIcon: false, muteNotifications: false };
         units = "metric";
         postureGoal = 80;
         precision = "High";
+        applyLaunchAtLogin(false);
+        applyDockIcon(false);
         updateRustHealth();
         restored = true;
         setTimeout(() => (restored = false), 2500);
@@ -392,17 +443,22 @@
                                     <!-- Toggle switch -->
                                     <button
                                         onclick={() => toggleCameraEnabled(cam.deviceId)}
+                                        aria-label={isEnabled ? `Disable ${cam.label || 'Camera'}` : `Enable ${cam.label || 'Camera'}`}
                                         class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0 cursor-pointer
                                         {isEnabled ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
                                         title={isEnabled ? "Deshabilitar cámara" : "Habilitar cámara"}
                                     >
                                         <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
                                             {isEnabled ? 'translate-x-5' : 'translate-x-0'}"></span>
-                                    </button>
-                                </div>
-                            {/each}
-                        </div>
-                        <p class="text-[10px] text-slate-400 mt-3">
+                                     </button>
+                                 </div>
+                             {/each}
+                             {#if cameraLimitWarning}
+                                 <p class="text-[10px] text-amber-500 mt-2">{$_("settings.camera_limit_warning")}</p>
+                             {/if}
+                         </div>
+                         <p class="text-[10px] text-slate-400 mt-3">
+
                             {$_("settings.cameras_sub")}
                         </p>
                     {/if}
@@ -591,6 +647,7 @@
                                 </div>
                                 <button
                                     onclick={() => (notifState[n.key] = !notifState[n.key])}
+                                    aria-label={notifState[n.key] ? "Disable notification" : "Enable notification"}
                                     class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0 cursor-pointer
                                     {notifState[n.key] ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
                                 >
@@ -641,10 +698,10 @@
                         <!-- Break Duration -->
                         <div>
                             <div class="flex justify-between items-center mb-2">
-                                 <label class="text-xs font-medium text-slate-700 dark:text-slate-200" for="break-duration">
-                                     {$_("settings.break_duration")}
-                                 </label>
-                                 <span class="text-xs font-bold text-sky-400">{healthState.breakDuration} {$_("settings.break_duration_unit")}</span>
+                                  <label class="text-xs font-medium text-slate-700 dark:text-slate-200" for="break-duration">
+                                      {$_("settings.break_duration")}
+                                  </label>
+                                  <span class="text-xs font-bold text-sky-400">{healthState.breakDuration} {$_("settings.break_duration_unit")}</span>
                             </div>
                             <input
                                 id="break-duration"
@@ -656,6 +713,101 @@
                                 class="w-full accent-sky-400 cursor-pointer"
                             />
                             <p class="text-[10px] text-slate-400 mt-1">Tiempo sugerido para realizar ejercicios o estiramientos.</p>
+                        </div>
+
+                        <!-- Break Alert Type -->
+                        <div class="sm:col-span-2">
+                            <p class="text-xs font-medium text-slate-700 dark:text-slate-200 mb-2">{$_("settings.break_alert_type")}</p>
+                            <div class="grid grid-cols-3 gap-2">
+                                {#each [["notification", $_("settings.alert_notification")], ["window", $_("settings.alert_window")], ["both", $_("settings.alert_both")]] as [val, label]}
+                                    <button
+                                        onclick={() => (healthState = { ...healthState, breakAlertType: val as "notification" | "window" | "both" })}
+                                        class="py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer
+                                            {healthState.breakAlertType === val
+                                                ? 'bg-sky-400/10 border-sky-400 text-sky-400'
+                                                : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-sky-400/50'}"
+                                    >
+                                        {label}
+                                    </button>
+                                {/each}
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- App Behavior -->
+                <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm p-5">
+                    <div class="flex items-center gap-2 mb-4">
+                        <div class="w-7 h-7 rounded-lg bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center text-violet-500">
+                            <Rocket class="w-4 h-4" />
+                        </div>
+                        <h2 class="font-semibold text-slate-800 dark:text-white">
+                            {$_("settings.app_behavior_title")}
+                        </h2>
+                    </div>
+                    <div class="space-y-3">
+                        <!-- Launch at login -->
+                        <div class="flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                            <div class="mr-3">
+                                <p class="text-sm font-medium text-slate-700 dark:text-slate-200">{$_("settings.launch_at_login")}</p>
+                                <p class="text-xs text-slate-400">{$_("settings.launch_at_login_sub")}</p>
+                            </div>
+                            <button
+                                onclick={async () => {
+                                    appBehavior = { ...appBehavior, launchAtLogin: !appBehavior.launchAtLogin };
+                                    await applyLaunchAtLogin(appBehavior.launchAtLogin);
+                                }}
+                                aria-label={appBehavior.launchAtLogin ? "Disable launch at login" : "Enable launch at login"}
+                                class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0 cursor-pointer
+                                {appBehavior.launchAtLogin ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
+                            >
+                                <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
+                                {appBehavior.launchAtLogin ? 'translate-x-5' : 'translate-x-0'}"></span>
+                            </button>
+                        </div>
+
+                        <!-- Hide dock icon -->
+                        <div class="flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                            <div class="flex items-center gap-2 mr-3">
+                                <MonitorOff class="w-4 h-4 text-slate-400 shrink-0" />
+                                <div>
+                                    <p class="text-sm font-medium text-slate-700 dark:text-slate-200">{$_("settings.hide_dock_icon")}</p>
+                                    <p class="text-xs text-slate-400">{$_("settings.hide_dock_icon_sub")}</p>
+                                </div>
+                            </div>
+                            <button
+                                onclick={async () => {
+                                    appBehavior = { ...appBehavior, hideDockIcon: !appBehavior.hideDockIcon };
+                                    await applyDockIcon(appBehavior.hideDockIcon);
+                                }}
+                                aria-label={appBehavior.hideDockIcon ? "Show dock icon" : "Hide dock icon"}
+                                class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0 cursor-pointer
+                                {appBehavior.hideDockIcon ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
+                            >
+                                <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
+                                {appBehavior.hideDockIcon ? 'translate-x-5' : 'translate-x-0'}"></span>
+                            </button>
+                        </div>
+
+                        <!-- Mute all notifications -->
+                        <div class="flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                            <div class="flex items-center gap-2 mr-3">
+                                <BellOff class="w-4 h-4 text-slate-400 shrink-0" />
+                                <div>
+                                    <p class="text-sm font-medium text-slate-700 dark:text-slate-200">{$_("settings.mute_notifications")}</p>
+                                    <p class="text-xs text-slate-400">{$_("settings.mute_notifications_sub")}</p>
+                                </div>
+                            </div>
+                            <button
+                                onclick={() => { appBehavior = { ...appBehavior, muteNotifications: !appBehavior.muteNotifications }; }}
+                                aria-label={appBehavior.muteNotifications ? "Unmute notifications" : "Mute notifications"}
+                                class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0 cursor-pointer
+                                {appBehavior.muteNotifications ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
+                            >
+                                <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200
+                                {appBehavior.muteNotifications ? 'translate-x-5' : 'translate-x-0'}"></span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -729,6 +881,7 @@
                         </div>
                         <button
                             onclick={() => { aiSettings = { ...aiSettings, enabled: !aiSettings.enabled }; }}
+                            aria-label={aiSettings.enabled ? "Disable AI features" : "Enable AI features"}
                             class="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0
                                 {aiSettings.enabled ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
                         >
@@ -741,7 +894,7 @@
                         <div class="space-y-4">
                             <!-- Provider -->
                             <div>
-                                 <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_provider_label")}</label>
+                                 <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_provider_label")}</p>
                                 <div class="grid grid-cols-4 gap-2">
                                     {#each (['openai', 'anthropic', 'gemini', 'ollama'] as AiProvider[]) as p}
                                         <button
@@ -760,8 +913,9 @@
                             <!-- API Key (hidden for ollama) -->
                             {#if aiSettings.provider !== 'ollama'}
                                 <div>
-                                     <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_api_key_label")}</label>
+                                     <label for="ai-api-key" class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_api_key_label")}</label>
                                     <input
+                                        id="ai-api-key"
                                         type="password"
                                         bind:value={aiSettings.apiKey}
                                         placeholder="sk-... / key-... / AIza..."
@@ -774,8 +928,9 @@
                                 </div>
                             {:else}
                                 <div>
-                                     <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_host_label")}</label>
+                                     <label for="ai-host" class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_host_label")}</label>
                                     <input
+                                        id="ai-host"
                                         type="text"
                                         bind:value={aiSettings.baseUrl}
                                         placeholder="http://localhost:11434"
@@ -790,8 +945,9 @@
 
                             <!-- Model -->
                             <div>
-                                 <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_model_label")}</label>
+                                 <label for="ai-model" class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">{$_("settings.ai_model_label")}</label>
                                 <input
+                                    id="ai-model"
                                     type="text"
                                     bind:value={aiSettings.model}
                                     class="w-full px-3 py-2.5 rounded-xl text-sm
@@ -804,7 +960,7 @@
 
                             <!-- Feature toggles -->
                             <div>
-                                <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">Features</label>
+                                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">Features</p>
                                 <div class="space-y-2">
                                     {#each [
                                         { key: 'smartTips', label: 'Smart Tips', sub: 'Context-aware tips generated by AI' },
@@ -824,6 +980,7 @@
                                                         features: { ...aiSettings.features, [f.key]: !aiSettings.features[f.key as keyof typeof aiSettings.features] }
                                                     };
                                                 }}
+                                                aria-label={aiSettings.features[f.key as keyof typeof aiSettings.features] ? `Disable ${f.label}` : `Enable ${f.label}`}
                                                 class="relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0
                                                     {aiSettings.features[f.key as keyof typeof aiSettings.features] ? 'bg-sky-400' : 'bg-slate-200 dark:bg-slate-600'}"
                                             >
