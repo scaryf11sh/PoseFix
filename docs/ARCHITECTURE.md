@@ -13,16 +13,21 @@ Localizado en `/PoseFixSensor/`.
 ### 2. PoseWebApp (Aplicación de Escritorio)
 Localizado en `/PoseWebApp/`.
 - **Frontend**: SvelteKit con TypeScript y CSS vainilla.
+    - **Visualización de Datos**: Utiliza **Chart.js** integrado mediante **Acciones de Svelte 5** (`use:action`). Este patrón asegura que los canvas se inicialicen y destruyan correctamente con el ciclo de vida de los componentes, evitando fugas de memoria en el entorno de Tauri.
 - **Backend de Escritorio**: Rust (Tauri).
-    - **Comunicación con Hardware**: Utiliza `btleplug` en el backend de Rust para escanear y conectarse a los sensores PoseFix.
     - **Gestión de Salud (AppHealthState)**: Módulo en Rust que rastrea el tiempo de sesión, intervalos de descanso y notificaciones mediante `tauri::async_runtime`.
-    - **Interfaz de Bandeja (Tray Icon)**: Proporciona persistencia en segundo plano y acceso rápido a controles de sesión.
-- **Integración de Comandos**: Implementa comandos de Tauri para control de BLE (scan, connect, start/stop data) y configuración de salud.
+        - **alert_type**: Define la modalidad de aviso (`notification`, `window`, `both`).
+        - **Overlays Nativos Multimonitor**: Al dispararse un descanso, el backend crea una ventana de Tauri (`break_overlay_N`) por cada monitor físico detectado. Estas ventanas cargan la ruta `/overlay`, bloqueando visualmente todo el escritorio a nivel de sistema operativo.
+        - **Control de Ventanas**: La persistencia y cierre de las alertas se gestionan mediante el comando nativo `hide_break_alert`.
+    - **Interfaz de Bandeja (Tray Icon)**: Proporciona persistencia en segundo plano y acceso rápido a controles de sesión. 
+        - **Relay de Datos de Alta Frecuencia**: El `postureScore` se transmite de la ventana de cámara al Menubar utilizando el bus de datos del navegador (`localStorage` + `storage event`), evitando el overhead del puente IPC de Tauri para actualizaciones en tiempo real.
+- **Integración de Comandos**: Implementa comandos de Tauri para control de BLE (scan, connect, start/stop data) y gestión nativa de ventanas de alerta.
 
 ### 3. Pose Server (Visión/IA)
-Localizado en `/PoseWebApp/pose-server/`.
+Localizado en \`/PoseWebApp/pose-server/\`.
 - **Lenguaje**: Python.
-- **Funcionalidad**: Procesamiento de imagen y detección de pose (posiblemente utilizando YOLO o mediapipe, basado en archivos como `yolov8n-pose.pt`).
+- **Funcionalidad**: Procesamiento de imagen y detección de pose utilizando YOLOv8.
+- **Restricción de Monitor**: La arquitectura actual limita el procesamiento a 4 fuentes de video concurrentes para mantener la estabilidad del frame rate.
 
 ## Flujo de Datos
 

@@ -88,5 +88,44 @@ Correr siempre Vite primero: bun run dev, luego open target/debug/PoseFix.app. O
 - **Refactorización**: Reemplazo de strings hardcodeados por `$t()`.
 - **Nuevas claves**: `settings.health_title`, `break_interval`, `break_duration`, `ai_provider_title`, `ai_provider_subtitle`, `ai_provider_label`, `ai_api_key_label`, `ai_host_label`, `ai_model_label`.
 
+### fix(tray): icono persiste después de cerrar ventana
+- **Causa raíz**: \`set_activation_policy(Accessory)\` en macOS 26 Tahoe destruye los status bar items como efecto secundario al cambiar la política en runtime (bug detectado del OS/Tauri en Tahoe).
+- **Fix**: Se eliminaron todas las llamadas a \`set_activation_policy\` (tanto \`Regular\` como \`Accessory\`).
+- **Gestión de Memoria**: El \`TrayIcon\` ahora se guarda en el estado gestionado (\`app.manage(tray)\`) para garantizar un tiempo de vida más allá del closure de \`setup()\`.
+- **Resultado**: El icono del Dock permanece visible (tradeoff necesario); el tray icon en la barra superior persiste correctamente mientras la aplicación esté en ejecución.
+
 ### fix(tray): Icono en menu bar, comportamiento del Dock
-- **Estado**: Pendiente de implementación final (`.icon()` en `TrayIconBuilder`, `set_activation_policy(Accessory/Regular)`, y handler para `RunEvent::Reopen`).
+- **Estado**: Finalizado mediante la eliminación de cambios de política de activación. Handler de \`RunEvent::Reopen\` configurado para restaurar la ventana principal.
+
+## [2026-05-18]
+
+### feat: Migración de gráficas de layerchart a Chart.js
+- **Motivo**: Incompatibilidad de `layerchart` con el entorno Svelte 5/Tauri.
+- **Implementación**: Uso de **Acciones nativas de Svelte 5** (`use:action`) para inicializar y gestionar el ciclo de vida de los canvas de Chart.js.
+- **Gráficas actualizadas**:
+    - Dashboard: `doughnutAction` (score de postura) y `lineChartAction` (historial de sesión).
+    - Cámara: `sparklineAction` (historial de fatiga ocular).
+
+### feat: Reestructuración del layout de la página de cámara
+- **Cambio**: Se eliminó el grid lateral de 5 columnas.
+- **Nuevo diseño**: Vista de cámara a ancho completo con un grid de 2 columnas debajo para 'Camera Signals' y 'AI Metrics', optimizando la visibilidad de los landmarks.
+
+### feat: Overlays nativos multi-monitor
+- **Solución**: Migración de overlays CSS (limitados a la ventana de la app) a ventanas nativas de Tauri (`break_overlay_N`) para cada monitor detectado vía `available_monitors()`.
+- **Funcionalidad**: Oscurecimiento total del escritorio (72% opacidad) durante el descanso, bloqueando la interacción en todos los monitores.
+- **Ruta**: Nueva ruta `/overlay` dedicada a renderizar el fondo semi-transparente.
+
+### fix: Control nativo de cierre de Break Alert
+- **Solución**: Creación del comando Rust `hide_break_alert` para mitigar la falta de fiabilidad de `hide()` desde JS en ventanas secundarias. Cierra tanto el popup como todos los overlays asociados de forma atómica.
+
+### feat: Seguimiento de score en tiempo real (Menubar)
+- **Mecanismo**: La página de cámara escribe en `localStorage` y el `menubar` reacciona mediante el evento `storage`. Permite telemetría de alta frecuencia sin saturar el bus IPC de Tauri.
+
+### fix: Internacionalización (i18n)
+- **Nuevas claves**:
+    - Diálogo de confirmación de salida: `app.quit_title`, `app.quit_body`, `app.quit_confirm`.
+    - Telemetría Menubar: `menubar.posture_score`.
+- **Archivos**: Actualización de `en.json` y `es.json`.
+
+---
+*Documentado por: Documenter*
